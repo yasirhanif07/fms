@@ -13,12 +13,22 @@ interface ImportTransaction {
   addedById: string; // partner who added this transaction
 }
 
+interface PartnerBaseValue {
+  userId: string;
+  holdings: number;
+  loan: number;
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (session.user.role === "VIEWER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { companyId, transactions }: { companyId: string; transactions: ImportTransaction[] } = await req.json();
+  const {
+    companyId,
+    transactions,
+    partnerBaseValues,
+  }: { companyId: string; transactions: ImportTransaction[]; partnerBaseValues?: PartnerBaseValue[] } = await req.json();
 
   if (!companyId || !transactions?.length) {
     return NextResponse.json({ error: "companyId and transactions required" }, { status: 400 });
@@ -68,6 +78,33 @@ export async function POST(req: Request) {
       });
     })
   );
+
+  // Handle partnerBaseValues: create PartnerLoan for loan > 0, update baseHoldings
+  if (partnerBaseValues && partnerBaseValues.length > 0) {
+    const now = new Date();
+    for (const entry of partnerBaseValues) {
+      if (!validUserIds.has(entry.userId)) continue;
+
+      // Update baseHoldings on CompanyUser
+      await prisma.companyUser.update({
+        where: { companyId_userId: { companyId, userId: entry.userId } },
+        data: { baseHoldings: entry.holdings },
+      });
+
+      // Create PartnerLoan for loan > 0
+      if (entry.loan > 0) {
+        await prisma.partnerLoan.create({
+          data: {
+            companyId,
+            userId: entry.userId,
+            amount: entry.loan,
+            description: "Opening balance",
+            date: now,
+          },
+        });
+      }
+    }
+  }
 
   return NextResponse.json({ imported: created.length });
 }

@@ -21,6 +21,10 @@ export async function GET(req: Request) {
             where: { companyId, type: "INCOME" },
             select: { type: true, amount: true },
           },
+          partnerLoans: {
+            where: { companyId },
+            select: { id: true, amount: true, description: true, date: true },
+          },
         },
       },
     },
@@ -31,7 +35,7 @@ export async function GET(req: Request) {
       .filter((t) => t.type === "INCOME")
       .reduce((s, t) => s + t.amount, 0);
     const holdings = cu.baseHoldings + txIncome;
-    const loan = cu.baseLoan; // loan from base (CSV summary) only
+    const loan = cu.user.partnerLoans.reduce((s, l) => s + l.amount, 0);
     return {
       partnerId: cu.userId,
       partnerName: cu.user.name,

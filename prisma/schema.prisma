@@ -16,8 +16,9 @@ model User {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  companyUsers CompanyUser[]
-  transactions Transaction[] @relation("AddedBy")
+  companyUsers  CompanyUser[]
+  transactions  Transaction[]  @relation("AddedBy")
+  partnerLoans  PartnerLoan[]  @relation("PartnerLoans")
 }
 
 model Company {
@@ -29,6 +30,7 @@ model Company {
 
   companyUsers CompanyUser[]
   transactions Transaction[]
+  partnerLoans PartnerLoan[]
 }
 
 model CompanyUser {
@@ -69,4 +71,19 @@ model Transaction {
   @@index([addedById])
   @@index([companyId, date])
   @@index([type])
+}
+
+model PartnerLoan {
+  id          String   @id @default(cuid())
+  companyId   String
+  userId      String
+  amount      Float
+  description String?
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation("PartnerLoans", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId])
 }

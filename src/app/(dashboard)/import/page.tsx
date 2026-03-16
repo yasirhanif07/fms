@@ -155,7 +155,16 @@ export default function ImportPage() {
     setImporting(true);
     setImportError("");
 
-    // 1. Import transactions
+    // Build partnerBaseValues before sending (needed in the POST body)
+    const partnerBaseValues = partnerSummary
+      .filter((s) => summaryMapping[s.name])
+      .map((s) => ({
+        userId: summaryMapping[s.name],
+        holdings: s.holdings,
+        loan: s.loan,
+      }));
+
+    // 1. Import transactions (+ partner base values in the same request)
     const res = await fetch("/api/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -169,6 +178,7 @@ export default function ImportPage() {
           description: tx.description,
           addedById: tx.addedById || "",
         })),
+        partnerBaseValues: partnerBaseValues.length > 0 ? partnerBaseValues : undefined,
       }),
     });
 
@@ -179,23 +189,6 @@ export default function ImportPage() {
     }
 
     const { imported } = await res.json();
-
-    // 2. Save partner base values if summary was detected and mapped
-    const baseRows = partnerSummary
-      .filter((s) => summaryMapping[s.name])
-      .map((s) => ({
-        userId: summaryMapping[s.name],
-        baseHoldings: s.holdings,
-        baseLoan: s.loan,
-      }));
-
-    if (baseRows.length > 0) {
-      await fetch(`/api/companies/${selectedCompanyId}/partners/base`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: baseRows }),
-      });
-    }
 
     setImporting(false);
     setImportedCount(imported);

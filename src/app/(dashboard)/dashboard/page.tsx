@@ -20,12 +20,21 @@ import {
   Pencil,
   Check,
   X,
+  Trash2,
+  Plus,
 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
 import { TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_COLORS } from "@/lib/constants";
+
+interface PartnerLoanEntry {
+  id: string;
+  amount: number;
+  description: string | null;
+  date: string;
+}
 
 interface PartnerHolding {
   id: string;
@@ -35,6 +44,7 @@ interface PartnerHolding {
   baseLoan: number;
   holdings: number;
   loan: number;
+  loans: PartnerLoanEntry[];
   total: number;
 }
 
@@ -67,6 +77,16 @@ export default function DashboardPage() {
   const [editing, setEditing] = useState(false);
   const [editRows, setEditRows] = useState<EditRows>({});
   const [saving, setSaving] = useState(false);
+
+  // Loans panel state
+  const [expandedLoanPartnerId, setExpandedLoanPartnerId] = useState<string | null>(null);
+  const [newLoan, setNewLoan] = useState<{ amount: string; description: string; date: string }>({
+    amount: "",
+    description: "",
+    date: new Date().toISOString().slice(0, 10),
+  });
+  const [loanSaving, setLoanSaving] = useState(false);
+  const [loanDeleting, setLoanDeleting] = useState<string | null>(null);
 
   const fetchDashboard = () => {
     if (!activeCompanyId) return;
@@ -110,6 +130,35 @@ export default function DashboardPage() {
 
     setSaving(false);
     setEditing(false);
+    fetchDashboard();
+  };
+
+  const handleAddLoan = async (userId: string) => {
+    if (!activeCompanyId) return;
+    const amount = parseFloat(newLoan.amount);
+    if (!amount || amount <= 0) return;
+    setLoanSaving(true);
+    await fetch(`/api/companies/${activeCompanyId}/partners/${userId}/loans`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amount,
+        description: newLoan.description || null,
+        date: newLoan.date ? new Date(newLoan.date).toISOString() : undefined,
+      }),
+    });
+    setLoanSaving(false);
+    setNewLoan({ amount: "", description: "", date: new Date().toISOString().slice(0, 10) });
+    fetchDashboard();
+  };
+
+  const handleDeleteLoan = async (userId: string, loanId: string) => {
+    if (!activeCompanyId) return;
+    setLoanDeleting(loanId);
+    await fetch(`/api/companies/${activeCompanyId}/partners/${userId}/loans?loanId=${loanId}`, {
+      method: "DELETE",
+    });
+    setLoanDeleting(null);
     fetchDashboard();
   };
 
@@ -256,33 +305,112 @@ export default function DashboardPage() {
                   {data.partnerHoldings.map((p) => {
                     const row = editRows[p.id] ?? { loan: String(p.loan), holdings: String(p.holdings) };
                     const preview = previewRows.find((r) => r.id === p.id)!;
+                    const isLoanExpanded = expandedLoanPartnerId === p.id;
                     return (
-                      <TableRow key={p.id}>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell className="text-right text-sm text-orange-600">
-                          {editing ? (
-                            <Input
-                              type="number"
-                              className="h-7 text-xs text-right w-36 ml-auto"
-                              value={row.loan}
-                              onChange={(e) => setEditRows({ ...editRows, [p.id]: { ...row, loan: e.target.value } })}
-                            />
-                          ) : formatPKR(p.loan)}
-                        </TableCell>
-                        <TableCell className="text-right text-sm font-semibold text-green-700">
-                          {editing ? (
-                            <Input
-                              type="number"
-                              className="h-7 text-xs text-right w-36 ml-auto"
-                              value={row.holdings}
-                              onChange={(e) => setEditRows({ ...editRows, [p.id]: { ...row, holdings: e.target.value } })}
-                            />
-                          ) : formatPKR(p.holdings)}
-                        </TableCell>
-                        <TableCell className="text-right text-sm font-semibold">
-                          {formatPKR(preview.total)}
-                        </TableCell>
-                      </TableRow>
+                      <>
+                        <TableRow key={p.id}>
+                          <TableCell className="font-medium">{p.name}</TableCell>
+                          <TableCell className="text-right text-sm text-orange-600">
+                            {editing ? (
+                              <Input
+                                type="number"
+                                className="h-7 text-xs text-right w-36 ml-auto"
+                                value={row.loan}
+                                onChange={(e) => setEditRows({ ...editRows, [p.id]: { ...row, loan: e.target.value } })}
+                              />
+                            ) : (
+                              <button
+                                className="hover:underline cursor-pointer"
+                                onClick={() => {
+                                  setExpandedLoanPartnerId(isLoanExpanded ? null : p.id);
+                                  setNewLoan({ amount: "", description: "", date: new Date().toISOString().slice(0, 10) });
+                                }}
+                              >
+                                {formatPKR(p.loan)}
+                              </button>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right text-sm font-semibold text-green-700">
+                            {editing ? (
+                              <Input
+                                type="number"
+                                className="h-7 text-xs text-right w-36 ml-auto"
+                                value={row.holdings}
+                                onChange={(e) => setEditRows({ ...editRows, [p.id]: { ...row, holdings: e.target.value } })}
+                              />
+                            ) : formatPKR(p.holdings)}
+                          </TableCell>
+                          <TableCell className="text-right text-sm font-semibold">
+                            {formatPKR(preview.total)}
+                          </TableCell>
+                        </TableRow>
+                        {isLoanExpanded && (
+                          <TableRow key={`${p.id}-loans`} className="bg-orange-50/60">
+                            <TableCell colSpan={4} className="py-3 px-4">
+                              <div className="space-y-2">
+                                <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">
+                                  Loans for {p.name}
+                                </p>
+                                {p.loans.length === 0 && (
+                                  <p className="text-xs text-muted-foreground">No loans recorded yet.</p>
+                                )}
+                                {p.loans.map((l) => (
+                                  <div key={l.id} className="flex items-center justify-between text-xs bg-white rounded px-3 py-2 border border-orange-100">
+                                    <div className="flex items-center gap-3">
+                                      <span className="font-semibold text-orange-700">{formatPKR(l.amount)}</span>
+                                      <span className="text-muted-foreground">{l.description || "—"}</span>
+                                      <span className="text-muted-foreground">
+                                        {new Date(l.date).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })}
+                                      </span>
+                                    </div>
+                                    {canEdit && (
+                                      <button
+                                        className="text-slate-300 hover:text-red-500 transition-colors disabled:opacity-50"
+                                        disabled={loanDeleting === l.id}
+                                        onClick={() => handleDeleteLoan(p.id, l.id)}
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                                {canEdit && (
+                                  <div className="flex items-center gap-2 pt-1">
+                                    <Input
+                                      type="number"
+                                      placeholder="Amount"
+                                      className="h-7 text-xs w-28"
+                                      value={newLoan.amount}
+                                      onChange={(e) => setNewLoan({ ...newLoan, amount: e.target.value })}
+                                    />
+                                    <Input
+                                      type="text"
+                                      placeholder="Description"
+                                      className="h-7 text-xs flex-1"
+                                      value={newLoan.description}
+                                      onChange={(e) => setNewLoan({ ...newLoan, description: e.target.value })}
+                                    />
+                                    <Input
+                                      type="date"
+                                      className="h-7 text-xs w-36"
+                                      value={newLoan.date}
+                                      onChange={(e) => setNewLoan({ ...newLoan, date: e.target.value })}
+                                    />
+                                    <Button
+                                      size="sm"
+                                      className="h-7 text-xs gap-1"
+                                      disabled={loanSaving || !newLoan.amount}
+                                      onClick={() => handleAddLoan(p.id)}
+                                    >
+                                      <Plus className="w-3 h-3" /> {loanSaving ? "Adding..." : "Add"}
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </>
                     );
                   })}
                   <TableRow className="bg-green-800 hover:bg-green-800">

@@ -103,6 +103,10 @@ export async function GET(req: Request) {
             where: { companyId, type: "INCOME" },
             select: { type: true, amount: true },
           },
+          partnerLoans: {
+            where: { companyId },
+            select: { id: true, amount: true, description: true, date: true },
+          },
         },
       },
     },
@@ -113,7 +117,7 @@ export async function GET(req: Request) {
       .filter((t) => t.type === "INCOME")
       .reduce((s, t) => s + t.amount, 0);
     const holdings = cu.baseHoldings + txIncome;
-    const loan = cu.baseLoan; // loan comes only from base (CSV summary), not transactions
+    const loan = cu.user.partnerLoans.reduce((s, l) => s + l.amount, 0);
     return {
       id: cu.userId,
       name: cu.user.name,
@@ -122,6 +126,7 @@ export async function GET(req: Request) {
       baseLoan: cu.baseLoan,
       holdings,
       loan,
+      loans: cu.user.partnerLoans,
       total: holdings + loan,
     };
   });
