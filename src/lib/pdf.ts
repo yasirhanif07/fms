@@ -76,26 +76,21 @@ export function buildOverallPDF(
 
 export function buildPartnerPDF(
   companyName: string,
-  rows: {
-    name: string;
-    email: string;
-    role: string;
-    income: string;
-    expense: string;
-    loanGiven: string;
-    loanReceived: string;
-    total: string;
-  }[]
+  rows: { name: string; total: string; loan: string; holdings: string }[],
+  totals: { total: number; loan: number; holdings: number }
 ) {
-  const doc = new jsPDF({ orientation: "landscape" });
-  addHeader(doc, "Partner Contribution Report", companyName);
+  const doc = new jsPDF();
+  addHeader(doc, "Partner Holdings Report", companyName);
 
   autoTable(doc, {
     startY: 66,
-    head: [["Name", "Email", "Role", "Income", "Expense", "Loan Given", "Loan Received", "Transactions"]],
-    body: rows.map((r) => [r.name, r.email, r.role, r.income, r.expense, r.loanGiven, r.loanReceived, r.total]),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [30, 58, 138] },
+    head: [["Person", "Total (PKR)", "Loan (PKR)", "Holdings (PKR)"]],
+    body: rows.map((r) => [r.name, r.total, r.loan, r.holdings]),
+    foot: [["Total", formatPKR(totals.total), formatPKR(totals.loan), formatPKR(totals.holdings)]],
+    styles: { fontSize: 10, halign: "right" },
+    columnStyles: { 0: { halign: "left" } },
+    headStyles: { fillColor: [30, 58, 138], fontStyle: "bold" },
+    footStyles: { fillColor: [20, 83, 45], textColor: 255, fontStyle: "bold" },
   });
 
   return doc;

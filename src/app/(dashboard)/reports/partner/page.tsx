@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useCompany } from "@/context/CompanyContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -12,12 +11,6 @@ import { formatPKR } from "@/lib/currency";
 import { buildPartnerPDF } from "@/lib/pdf";
 import { Download, ArrowLeft } from "lucide-react";
 import Link from "next/link";
-
-const ROLE_COLORS: Record<string, string> = {
-  ADMIN: "bg-blue-100 text-blue-800",
-  PARTNER: "bg-green-100 text-green-800",
-  VIEWER: "bg-slate-100 text-slate-600",
-};
 
 export default function PartnerReportPage() {
   const { activeCompanyId, activeCompany } = useCompany();
@@ -32,24 +25,33 @@ export default function PartnerReportPage() {
       .then((d) => { setPartners(d); setLoading(false); });
   }, [activeCompanyId]);
 
+  const totals = partners.reduce(
+    (acc, p) => ({
+      total: acc.total + p.income,
+      loan: acc.loan + p.loanGiven,
+      holdings: acc.holdings + (p.income - p.loanGiven),
+    }),
+    { total: 0, loan: 0, holdings: 0 }
+  );
+
   const handleExport = () => {
     if (!activeCompany) return;
     const rows = partners.map((p) => ({
       name: p.partnerName,
-      email: p.partnerEmail,
-      role: p.role,
-      income: formatPKR(p.income),
-      expense: formatPKR(p.expense),
-      loanGiven: formatPKR(p.loanGiven),
-      loanReceived: formatPKR(p.loanReceived),
-      total: String(p.totalTransactions),
+      total: formatPKR(p.income),
+      loan: formatPKR(p.loanGiven),
+      holdings: formatPKR(p.income - p.loanGiven),
     }));
-    const doc = buildPartnerPDF(activeCompany.name, rows);
+    const doc = buildPartnerPDF(activeCompany.name, rows, totals);
     doc.save("partner-report.pdf");
   };
 
   if (!activeCompanyId) {
-    return <div className="flex items-center justify-center h-64"><p className="text-muted-foreground">Select a company first.</p></div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Select a company first.</p>
+      </div>
+    );
   }
 
   return (
@@ -70,36 +72,43 @@ export default function PartnerReportPage() {
         <CardContent className="p-0">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Partner</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="text-right">Income Added</TableHead>
-                <TableHead className="text-right">Expense Added</TableHead>
-                <TableHead className="text-right">Loan Given</TableHead>
-                <TableHead className="text-right">Loan Received</TableHead>
-                <TableHead className="text-right">Total Txs</TableHead>
+              <TableRow className="bg-slate-900 hover:bg-slate-900">
+                <TableHead className="text-white font-bold">Person</TableHead>
+                <TableHead className="text-right text-white font-bold">Total</TableHead>
+                <TableHead className="text-right text-white font-bold">Loan</TableHead>
+                <TableHead className="text-right text-white font-bold">Holdings</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>}
-              {!loading && partners.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No partners found.</TableCell></TableRow>
-              )}
-              {partners.map((p) => (
-                <TableRow key={p.partnerId}>
-                  <TableCell className="font-medium">{p.partnerName}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{p.partnerEmail}</TableCell>
-                  <TableCell>
-                    <Badge className={`text-xs ${ROLE_COLORS[p.role]} border-0`}>{p.role}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right text-green-600 text-sm">{formatPKR(p.income)}</TableCell>
-                  <TableCell className="text-right text-red-600 text-sm">{formatPKR(p.expense)}</TableCell>
-                  <TableCell className="text-right text-orange-600 text-sm">{formatPKR(p.loanGiven)}</TableCell>
-                  <TableCell className="text-right text-blue-600 text-sm">{formatPKR(p.loanReceived)}</TableCell>
-                  <TableCell className="text-right text-sm font-medium">{p.totalTransactions}</TableCell>
+              {loading && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Loading...</TableCell>
                 </TableRow>
-              ))}
+              )}
+              {!loading && partners.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No partners found.</TableCell>
+                </TableRow>
+              )}
+              {partners.map((p) => {
+                const holdings = p.income - p.loanGiven;
+                return (
+                  <TableRow key={p.partnerId}>
+                    <TableCell className="font-medium">{p.partnerName}</TableCell>
+                    <TableCell className="text-right text-sm">{formatPKR(p.income)}</TableCell>
+                    <TableCell className="text-right text-sm text-orange-600">{formatPKR(p.loanGiven)}</TableCell>
+                    <TableCell className="text-right text-sm font-semibold text-green-700">{formatPKR(holdings)}</TableCell>
+                  </TableRow>
+                );
+              })}
+              {!loading && partners.length > 0 && (
+                <TableRow className="bg-green-800 hover:bg-green-800 font-bold text-white">
+                  <TableCell className="text-white font-bold">Total</TableCell>
+                  <TableCell className="text-right text-white font-bold">{formatPKR(totals.total)}</TableCell>
+                  <TableCell className="text-right text-white font-bold">{formatPKR(totals.loan)}</TableCell>
+                  <TableCell className="text-right text-white font-bold">{formatPKR(totals.holdings)}</TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
