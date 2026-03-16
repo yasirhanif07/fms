@@ -109,19 +109,23 @@ export async function GET(req: Request) {
   });
 
   const partnerHoldings = companyUsers.map((cu) => {
-    const total = cu.user.transactions
+    const txIncome = cu.user.transactions
       .filter((t) => t.type === "INCOME")
       .reduce((s, t) => s + t.amount, 0);
-    const loan = cu.user.transactions
+    const txLoan = cu.user.transactions
       .filter((t) => t.type === "LOAN_GIVEN")
       .reduce((s, t) => s + t.amount, 0);
+    const holdings = cu.baseHoldings + txIncome;
+    const loan = cu.baseLoan + txLoan;
     return {
       id: cu.userId,
       name: cu.user.name,
       role: cu.role,
-      total,
+      baseHoldings: cu.baseHoldings,
+      baseLoan: cu.baseLoan,
+      holdings,
       loan,
-      holdings: total - loan,
+      total: holdings + loan,
     };
   });
 

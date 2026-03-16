@@ -32,11 +32,13 @@ model Company {
 }
 
 model CompanyUser {
-  id        String   @id @default(cuid())
-  companyId String
-  userId    String
-  role      String   @default("VIEWER")
-  joinedAt  DateTime @default(now())
+  id           String   @id @default(cuid())
+  companyId    String
+  userId       String
+  role         String   @default("VIEWER")
+  baseHoldings Float    @default(0)
+  baseLoan     Float    @default(0)
+  joinedAt     DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)

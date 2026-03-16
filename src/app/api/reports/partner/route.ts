@@ -28,25 +28,20 @@ export async function GET(req: Request) {
 
   const partnerReports = companyUsers.map((cu) => {
     const txs = cu.user.transactions;
-    let income = 0, expense = 0, loanGiven = 0, loanReceived = 0;
-
+    let txIncome = 0, txLoan = 0;
     for (const tx of txs) {
-      if (tx.type === "INCOME") income += tx.amount;
-      else if (tx.type === "EXPENSE") expense += tx.amount;
-      else if (tx.type === "LOAN_GIVEN") loanGiven += tx.amount;
-      else if (tx.type === "LOAN_RECEIVED") loanReceived += tx.amount;
+      if (tx.type === "INCOME") txIncome += tx.amount;
+      else if (tx.type === "LOAN_GIVEN") txLoan += tx.amount;
     }
-
+    const holdings = cu.baseHoldings + txIncome;
+    const loan = cu.baseLoan + txLoan;
     return {
       partnerId: cu.userId,
       partnerName: cu.user.name,
       partnerEmail: cu.user.email,
       role: cu.role,
-      totalTransactions: txs.length,
-      income,
-      expense,
-      loanGiven,
-      loanReceived,
+      income: holdings,
+      loanGiven: loan,
     };
   });
 

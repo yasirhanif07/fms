@@ -31,9 +31,11 @@ interface PartnerHolding {
   id: string;
   name: string;
   role: string;
-  total: number;
-  loan: number;
+  baseHoldings: number;
+  baseLoan: number;
   holdings: number;
+  loan: number;
+  total: number;
 }
 
 interface DashboardData {
@@ -79,8 +81,9 @@ export default function DashboardPage() {
 
   const startEditing = (holdings: PartnerHolding[]) => {
     const rows: EditRows = {};
+    // Edit base values only (not tx-derived totals)
     holdings.forEach((p) => {
-      rows[p.id] = { loan: String(p.loan), holdings: String(p.holdings) };
+      rows[p.id] = { loan: String(p.baseLoan), holdings: String(p.baseHoldings) };
     });
     setEditRows(rows);
     setEditing(true);
@@ -90,31 +93,21 @@ export default function DashboardPage() {
     if (!activeCompanyId || !data) return;
     setSaving(true);
 
-    const calls: Promise<Response>[] = [];
-    data.partnerHoldings.forEach((original) => {
-      const row = editRows[original.id];
-      if (!row) return;
-      const newLoan = parseFloat(row.loan) || 0;
-      const newHoldings = parseFloat(row.holdings) || 0;
-      const newTotal = newLoan + newHoldings; // Total = Loan + Holdings
-
-      if (newLoan !== original.loan) {
-        calls.push(fetch(`/api/companies/${activeCompanyId}/partners/adjust`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ partnerId: original.id, field: "loan", currentValue: original.loan, newValue: newLoan }),
-        }));
-      }
-      if (newTotal !== original.total) {
-        calls.push(fetch(`/api/companies/${activeCompanyId}/partners/adjust`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ partnerId: original.id, field: "total", currentValue: original.total, newValue: newTotal }),
-        }));
-      }
+    const rows = data.partnerHoldings.map((p) => {
+      const row = editRows[p.id] ?? { loan: String(p.baseLoan), holdings: String(p.baseHoldings) };
+      return {
+        userId: p.id,
+        baseHoldings: parseFloat(row.holdings) || 0,
+        baseLoan: parseFloat(row.loan) || 0,
+      };
     });
 
-    await Promise.all(calls);
+    await fetch(`/api/companies/${activeCompanyId}/partners/base`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows }),
+    });
+
     setSaving(false);
     setEditing(false);
     fetchDashboard();
