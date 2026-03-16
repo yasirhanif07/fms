@@ -53,15 +53,15 @@ export default function PartnersPage() {
   const canManage =
     session?.user?.role === "SUPER_ADMIN" || myCompanyRole === "ADMIN";
 
-  const handleRemove = async (partnerId: string) => {
+  const handleRemove = async (userId: string) => {
     if (!confirm("Remove this partner?")) return;
-    await fetch(`/api/companies/${companyId}/partners/${partnerId}`, { method: "DELETE" });
+    await fetch(`/api/companies/${companyId}/partners/${userId}`, { method: "DELETE" });
     fetchPartners();
   };
 
-  const handleRoleChange = async (partnerId: string, newRole: string) => {
-    setUpdatingId(partnerId);
-    await fetch(`/api/companies/${companyId}/partners/${partnerId}`, {
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    setUpdatingId(userId);
+    await fetch(`/api/companies/${companyId}/partners/${userId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: newRole }),
@@ -117,8 +117,8 @@ export default function PartnersPage() {
                     {canManage && cu.user.id !== session?.user?.id ? (
                       <Select
                         value={cu.role}
-                        onValueChange={(v) => v && handleRoleChange(cu.id, v)}
-                        disabled={updatingId === cu.id}
+                        onValueChange={(v) => v && handleRoleChange(cu.user.id, v)}
+                        disabled={updatingId === cu.user.id}
                       >
                         <SelectTrigger className="h-7 text-xs w-28">
                           <SelectValue />
@@ -143,7 +143,7 @@ export default function PartnersPage() {
                           variant="ghost"
                           size="sm"
                           className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                          onClick={() => handleRemove(cu.id)}
+                          onClick={() => handleRemove(cu.user.id)}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
