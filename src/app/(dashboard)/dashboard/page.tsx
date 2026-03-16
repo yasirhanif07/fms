@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useCompany } from "@/context/CompanyContext";
+import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { IncomeExpenseChart } from "@/components/dashboard/IncomeExpenseChart";
 import { formatPKR } from "@/lib/currency";
 import {
@@ -14,17 +17,20 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Users,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_COLORS } from "@/lib/constants";
 
 interface PartnerHolding {
   id: string;
   name: string;
+  role: string;
   total: number;
   loan: number;
   holdings: number;
@@ -48,19 +54,61 @@ interface DashboardData {
   partnerHoldings: PartnerHolding[];
 }
 
+interface EditState {
+  partnerId: string;
+  total: string;
+  loan: string;
+  saving: boolean;
+}
+
 export default function DashboardPage() {
   const { activeCompanyId, activeCompany } = useCompany();
+  const { data: session } = useSession();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [editState, setEditState] = useState<EditState | null>(null);
 
-  useEffect(() => {
+  const fetchDashboard = () => {
     if (!activeCompanyId) return;
     setLoading(true);
     fetch(`/api/dashboard?companyId=${activeCompanyId}`)
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [activeCompanyId]);
+  };
+
+  useEffect(() => { fetchDashboard(); }, [activeCompanyId]);
+
+  const handleSaveAdjustment = async () => {
+    if (!editState || !activeCompanyId) return;
+    const original = data?.partnerHoldings.find((p) => p.id === editState.partnerId);
+    if (!original) return;
+
+    setEditState({ ...editState, saving: true });
+
+    const newTotal = parseFloat(editState.total) || 0;
+    const newLoan = parseFloat(editState.loan) || 0;
+
+    const calls = [];
+    if (newTotal !== original.total) {
+      calls.push(fetch(`/api/companies/${activeCompanyId}/partners/adjust`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerId: editState.partnerId, field: "total", currentValue: original.total, newValue: newTotal }),
+      }));
+    }
+    if (newLoan !== original.loan) {
+      calls.push(fetch(`/api/companies/${activeCompanyId}/partners/adjust`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerId: editState.partnerId, field: "loan", currentValue: original.loan, newValue: newLoan }),
+      }));
+    }
+
+    await Promise.all(calls);
+    setEditState(null);
+    fetchDashboard();
+  };
 
   if (!activeCompanyId) {
     return (
@@ -153,6 +201,9 @@ export default function DashboardPage() {
           (acc, p) => ({ total: acc.total + p.total, loan: acc.loan + p.loan, holdings: acc.holdings + p.holdings }),
           { total: 0, loan: 0, holdings: 0 }
         );
+        const myHolding = data.partnerHoldings.find((p) => p.id === session?.user?.id);
+        const canEdit = session?.user?.role === "SUPER_ADMIN" || myHolding?.role === "ADMIN";
+
         return (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -169,22 +220,84 @@ export default function DashboardPage() {
                     <TableHead className="text-right text-white font-bold">Total</TableHead>
                     <TableHead className="text-right text-white font-bold">Loan</TableHead>
                     <TableHead className="text-right text-white font-bold">Holdings</TableHead>
+                    {canEdit && <TableHead className="w-20"></TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.partnerHoldings.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell className="text-right text-sm">{formatPKR(p.total)}</TableCell>
-                      <TableCell className="text-right text-sm text-orange-600">{formatPKR(p.loan)}</TableCell>
-                      <TableCell className="text-right text-sm font-semibold text-green-700">{formatPKR(p.holdings)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {data.partnerHoldings.map((p) => {
+                    const isEditing = editState?.partnerId === p.id;
+                    const previewLoan = isEditing ? (parseFloat(editState.loan) || 0) : p.loan;
+                    const previewTotal = isEditing ? (parseFloat(editState.total) || 0) : p.total;
+                    const previewHoldings = previewTotal - previewLoan;
+
+                    return (
+                      <TableRow key={p.id}>
+                        <TableCell className="font-medium">{p.name}</TableCell>
+                        <TableCell className="text-right text-sm">
+                          {isEditing ? (
+                            <Input
+                              type="number"
+                              className="h-7 text-xs text-right w-36 ml-auto"
+                              value={editState.total}
+                              onChange={(e) => setEditState({ ...editState, total: e.target.value })}
+                            />
+                          ) : formatPKR(p.total)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm text-orange-600">
+                          {isEditing ? (
+                            <Input
+                              type="number"
+                              className="h-7 text-xs text-right w-36 ml-auto"
+                              value={editState.loan}
+                              onChange={(e) => setEditState({ ...editState, loan: e.target.value })}
+                            />
+                          ) : formatPKR(p.loan)}
+                        </TableCell>
+                        <TableCell className={`text-right text-sm font-semibold ${isEditing ? "text-slate-500" : "text-green-700"}`}>
+                          {formatPKR(previewHoldings)}
+                        </TableCell>
+                        {canEdit && (
+                          <TableCell className="text-right">
+                            {isEditing ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  size="sm"
+                                  className="h-7 w-7 p-0"
+                                  onClick={handleSaveAdjustment}
+                                  disabled={editState.saving}
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0"
+                                  onClick={() => setEditState(null)}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-slate-400 hover:text-slate-700"
+                                onClick={() => setEditState({ partnerId: p.id, total: String(p.total), loan: String(p.loan), saving: false })}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })}
                   <TableRow className="bg-green-800 hover:bg-green-800">
                     <TableCell className="text-white font-bold">Total</TableCell>
                     <TableCell className="text-right text-white font-bold">{formatPKR(totals.total)}</TableCell>
                     <TableCell className="text-right text-white font-bold">{formatPKR(totals.loan)}</TableCell>
                     <TableCell className="text-right text-white font-bold">{formatPKR(totals.holdings)}</TableCell>
+                    {canEdit && <TableCell />}
                   </TableRow>
                 </TableBody>
               </Table>

@@ -118,6 +118,7 @@ export async function GET(req: Request) {
     return {
       id: cu.userId,
       name: cu.user.name,
+      role: cu.role,
       total,
       loan,
       holdings: total - loan,
