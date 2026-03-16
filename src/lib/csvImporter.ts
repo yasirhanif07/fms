@@ -8,6 +8,8 @@ export interface ParsedTransaction {
   amount: number;
   description: string;
   rawRow: number;
+  detectedPartnerName: string | null; // name matched from description
+  addedById: string | null;           // resolved partner ID (set in page after fetching partners)
 }
 
 // Clean amount string: remove commas, spaces, parse float
@@ -23,24 +25,20 @@ function parseDate(dateStr: string, fallbackYear: number): Date | null {
   const clean = dateStr.trim();
   if (!clean) return null;
 
-  // Skip month-year only like "Nov-2024"
   if (/^[A-Za-z]+-\d{4}$/.test(clean)) return null;
 
-  // Format: "1-Nov-2024", "01-Jan-2025"
   const withYear = clean.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})$/);
   if (withYear) {
     const d = new Date(`${withYear[2]} ${withYear[1]}, ${withYear[3]}`);
     return isNaN(d.getTime()) ? null : d;
   }
 
-  // Format: "12-Dec" (no year — use fallback)
   const noYear = clean.match(/^(\d{1,2})-([A-Za-z]+)$/);
   if (noYear) {
     const d = new Date(`${noYear[2]} ${noYear[1]}, ${fallbackYear}`);
     return isNaN(d.getTime()) ? null : d;
   }
 
-  // Format: "2025-01-01" ISO
   const iso = new Date(clean);
   if (!isNaN(iso.getTime())) return iso;
 
@@ -56,13 +54,26 @@ function detectCategory(description: string): string {
   return "OTHER";
 }
 
-// Detect if transaction is a loan
+// Detect transaction type
 function detectType(description: string, isIncome: boolean): string {
   const d = description.toLowerCase();
-  if (/\bloan\b/.test(d)) {
-    return isIncome ? "LOAN_RECEIVED" : "LOAN_GIVEN";
-  }
+  if (/\bloan\b/.test(d)) return isIncome ? "LOAN_RECEIVED" : "LOAN_GIVEN";
   return isIncome ? "INCOME" : "EXPENSE";
+}
+
+// Detect partner name from description by matching against known partner names.
+// Returns the first partner name found (case-insensitive, whole-word match).
+export function detectPartner(description: string, partnerNames: string[]): string | null {
+  if (!partnerNames.length) return null;
+  const d = description.toLowerCase();
+  for (const name of partnerNames) {
+    // Match first name or full name as whole word
+    const firstName = name.split(" ")[0].toLowerCase();
+    if (firstName.length < 3) continue; // skip very short names to avoid false matches
+    const regex = new RegExp(`\\b${firstName}\\b`, "i");
+    if (regex.test(d)) return name;
+  }
+  return null;
 }
 
 export function parseCSV(csvText: string): {
@@ -78,7 +89,7 @@ export function parseCSV(csvText: string): {
   const errors: string[] = [];
   let skipped = 0;
   let fallbackYear = new Date().getFullYear();
-  let lastKnownDate: Date | null = null; // carry forward for dateless rows
+  let lastKnownDate: Date | null = null;
 
   result.data.forEach((cols, rowIndex) => {
     const dateStr = (cols[0] || "").trim();
@@ -86,22 +97,18 @@ export function parseCSV(csvText: string): {
     const expenseStr = (cols[2] || "").trim();
     const description = (cols[3] || "").trim();
 
-    // Skip header row
     if (dateStr === "" && incomeStr.toLowerCase() === "income") return;
 
-    // Skip completely empty rows
     if (!dateStr && !incomeStr && !expenseStr && !description) {
       skipped++;
       return;
     }
 
-    // Skip month-year summary rows like "Nov-2024"
     if (/^[A-Za-z]+-\d{4}$/.test(dateStr)) {
       skipped++;
       return;
     }
 
-    // Skip rows with no amount
     const income = parseAmount(incomeStr);
     const expense = parseAmount(expenseStr);
     if (income === 0 && expense === 0) {
@@ -109,16 +116,11 @@ export function parseCSV(csvText: string): {
       return;
     }
 
-    // Parse date — update fallback year if we see a full date
     const yearMatch = dateStr.match(/(\d{4})$/);
     if (yearMatch) fallbackYear = parseInt(yearMatch[1]);
 
     let date = parseDate(dateStr, fallbackYear);
-
-    // No date in this row — use the last known date (e.g. continuation rows)
-    if (!date && lastKnownDate) {
-      date = lastKnownDate;
-    }
+    if (!date && lastKnownDate) date = lastKnownDate;
 
     if (!date) {
       errors.push(`Row ${rowIndex + 1}: Could not parse date "${dateStr}"`);
@@ -139,6 +141,8 @@ export function parseCSV(csvText: string): {
         amount: income,
         description: desc,
         rawRow: rowIndex + 1,
+        detectedPartnerName: null,
+        addedById: null,
       });
     }
 
@@ -152,12 +156,12 @@ export function parseCSV(csvText: string): {
         amount: expense,
         description: desc,
         rawRow: rowIndex + 1,
+        detectedPartnerName: null,
+        addedById: null,
       });
     }
   });
 
-  // Sort by date ascending
   transactions.sort((a, b) => a.date.getTime() - b.date.getTime());
-
   return { transactions, skipped, errors };
 }

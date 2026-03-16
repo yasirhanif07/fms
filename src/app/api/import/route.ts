@@ -10,6 +10,7 @@ interface ImportTransaction {
   category: string | null;
   amount: number;
   description: string;
+  addedById: string; // partner who added this transaction
 }
 
 export async function POST(req: Request) {
@@ -23,6 +24,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "companyId and transactions required" }, { status: 400 });
   }
 
+  // Validate all addedById values belong to this company
+  const companyUserIds = await prisma.companyUser.findMany({
+    where: { companyId },
+    select: { userId: true },
+  });
+  const validUserIds = new Set(companyUserIds.map((cu) => cu.userId));
+
   // Get current running balance
   const lastTx = await prisma.transaction.findFirst({
     where: { companyId },
@@ -32,22 +40,23 @@ export async function POST(req: Request) {
 
   let runningBalance = lastTx?.runningBalance ?? 0;
 
-  // Sort by date ascending before inserting
   const sorted = [...transactions].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 
-  // Bulk insert using createMany isn't supported with running balance — insert sequentially in a transaction
   const created = await prisma.$transaction(
     sorted.map((tx) => {
       const delta = getBalanceDelta(tx.type, null);
       runningBalance = runningBalance + delta * tx.amount;
       const currentBalance = runningBalance;
 
+      // Fall back to the importer's own ID if assigned partner is invalid
+      const addedById = validUserIds.has(tx.addedById) ? tx.addedById : session.user.id;
+
       return prisma.transaction.create({
         data: {
           companyId,
-          addedById: session.user.id,
+          addedById,
           type: tx.type,
           category: tx.category || null,
           loanDirection: null,
