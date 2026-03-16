@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import bcrypt from "bcryptjs";
 
 async function isCompanyAdmin(userId: string, companyId: string) {
   const cu = await prisma.companyUser.findUnique({
@@ -40,18 +41,28 @@ export async function POST(
 
   if (!canManage) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { userId, role } = await req.json();
-  if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
+  const { name, email, role } = await req.json();
+  if (!name || !email) return NextResponse.json({ error: "Name and email required" }, { status: 400 });
+
+  // Find or create user by email
+  let user = await prisma.user.findUnique({ where: { email } });
+  const isNewUser = !user;
+  if (!user) {
+    const passwordHash = await bcrypt.hash("fms@123", 12);
+    user = await prisma.user.create({
+      data: { name, email, passwordHash, role: "ADMIN" },
+    });
+  }
 
   const existing = await prisma.companyUser.findUnique({
-    where: { companyId_userId: { companyId: params.companyId, userId } },
+    where: { companyId_userId: { companyId: params.companyId, userId: user.id } },
   });
-  if (existing) return NextResponse.json({ error: "User already in company" }, { status: 400 });
+  if (existing) return NextResponse.json({ error: "User already in this company" }, { status: 400 });
 
   const companyUser = await prisma.companyUser.create({
-    data: { companyId: params.companyId, userId, role: role || "PARTNER" },
+    data: { companyId: params.companyId, userId: user.id, role: role || "PARTNER" },
     include: { user: true },
   });
 
-  return NextResponse.json(companyUser, { status: 201 });
+  return NextResponse.json({ ...companyUser, isNewUser, tempPassword: isNewUser ? "fms@123" : null }, { status: 201 });
 }

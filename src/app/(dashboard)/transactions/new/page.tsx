@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCompany } from "@/context/CompanyContext";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,11 @@ import { ArrowLeft } from "lucide-react";
 const TYPES = Object.entries(TRANSACTION_TYPE_LABELS);
 const CATEGORIES = Object.entries(EXPENSE_CATEGORY_LABELS);
 
+interface Partner {
+  id: string;
+  user: { id: string; name: string };
+}
+
 export default function NewTransactionPage() {
   const router = useRouter();
   const { activeCompanyId, companies, setActiveCompanyId } = useCompany();
@@ -33,9 +38,22 @@ export default function NewTransactionPage() {
     amount: "",
     description: "",
     date: new Date().toISOString().split("T")[0],
+    addedById: "",
   });
+  const [partners, setPartners] = useState<Partner[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Fetch partners whenever company changes
+  useEffect(() => {
+    if (!form.companyId) return;
+    fetch(`/api/companies/${form.companyId}/partners`)
+      .then((r) => r.json())
+      .then((data: Partner[]) => {
+        setPartners(data);
+        setForm((prev) => ({ ...prev, addedById: "" }));
+      });
+  }, [form.companyId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +72,7 @@ export default function NewTransactionPage() {
         amount: parseFloat(form.amount),
         category: form.type === "EXPENSE" ? form.category || null : null,
         loanDirection: form.type === "LOAN_REPAYMENT" ? form.loanDirection || null : null,
+        addedById: form.addedById || null,
       }),
     });
 
@@ -96,6 +115,27 @@ export default function NewTransactionPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Added By */}
+            {partners.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Added By</Label>
+                <Select
+                  value={form.addedById}
+                  onValueChange={(v) => v && setForm({ ...form, addedById: v === "SELF" ? "" : v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="— me (default) —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SELF">— me (default) —</SelectItem>
+                    {partners.map((p) => (
+                      <SelectItem key={p.user.id} value={p.user.id}>{p.user.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Type */}
             <div className="space-y-1.5">

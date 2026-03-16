@@ -49,10 +49,19 @@ export async function POST(req: Request) {
   if (session.user.role === "VIEWER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
-  const { companyId, type, category, loanDirection, amount, description, date } = body;
+  const { companyId, type, category, loanDirection, amount, description, date, addedById } = body;
 
   if (!companyId || !type || !amount || !date) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  // Validate addedById belongs to this company, fall back to session user
+  let resolvedAddedById = session.user.id;
+  if (addedById) {
+    const cu = await prisma.companyUser.findUnique({
+      where: { companyId_userId: { companyId, userId: addedById } },
+    });
+    if (cu) resolvedAddedById = addedById;
   }
 
   // Get the last running balance for this company
@@ -69,7 +78,7 @@ export async function POST(req: Request) {
   const transaction = await prisma.transaction.create({
     data: {
       companyId,
-      addedById: session.user.id,
+      addedById: resolvedAddedById,
       type,
       category: category || null,
       loanDirection: loanDirection || null,
