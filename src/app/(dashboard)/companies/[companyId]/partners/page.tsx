@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -25,11 +28,14 @@ const ROLE_COLORS: Record<string, string> = {
   VIEWER: "bg-slate-100 text-slate-600",
 };
 
+const ROLE_OPTIONS = ["ADMIN", "PARTNER", "VIEWER"];
+
 export default function PartnersPage() {
   const { companyId } = useParams() as { companyId: string };
   const { data: session } = useSession();
   const [partners, setPartners] = useState<CompanyUser[]>([]);
   const [companyName, setCompanyName] = useState("");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const fetchPartners = async () => {
     const [pRes, cRes] = await Promise.all([
@@ -42,10 +48,26 @@ export default function PartnersPage() {
 
   useEffect(() => { fetchPartners(); }, [companyId]);
 
+  // Determine if current user can manage this company
+  const myCompanyRole = partners.find((p) => p.user.id === session?.user?.id)?.role;
+  const canManage =
+    session?.user?.role === "SUPER_ADMIN" || myCompanyRole === "ADMIN";
+
   const handleRemove = async (partnerId: string) => {
     if (!confirm("Remove this partner?")) return;
     await fetch(`/api/companies/${companyId}/partners/${partnerId}`, { method: "DELETE" });
     fetchPartners();
+  };
+
+  const handleRoleChange = async (partnerId: string, newRole: string) => {
+    setUpdatingId(partnerId);
+    await fetch(`/api/companies/${companyId}/partners/${partnerId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: newRole }),
+    });
+    await fetchPartners();
+    setUpdatingId(null);
   };
 
   return (
@@ -59,7 +81,7 @@ export default function PartnersPage() {
             <h1 className="text-2xl font-bold">Partners</h1>
             <p className="text-sm text-muted-foreground">{companyName}</p>
           </div>
-          {session?.user.role === "ADMIN" && (
+          {canManage && (
             <Link href={`/companies/${companyId}/partners/new`}>
               <Button><Plus className="w-4 h-4 mr-1" /> Add Partner</Button>
             </Link>
@@ -74,9 +96,9 @@ export default function PartnersPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
+                <TableHead className="w-36">Role</TableHead>
                 <TableHead>Joined</TableHead>
-                {session?.user.role === "ADMIN" && <TableHead className="w-10"></TableHead>}
+                {canManage && <TableHead className="w-10"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -92,21 +114,40 @@ export default function PartnersPage() {
                   <TableCell className="font-medium">{cu.user.name}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{cu.user.email}</TableCell>
                   <TableCell>
-                    <Badge className={`text-xs ${ROLE_COLORS[cu.role]} border-0`}>{cu.role}</Badge>
+                    {canManage && cu.user.id !== session?.user?.id ? (
+                      <Select
+                        value={cu.role}
+                        onValueChange={(v) => v && handleRoleChange(cu.id, v)}
+                        disabled={updatingId === cu.id}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ROLE_OPTIONS.map((r) => (
+                            <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge className={`text-xs ${ROLE_COLORS[cu.role]} border-0`}>{cu.role}</Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {new Date(cu.joinedAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })}
                   </TableCell>
-                  {session?.user.role === "ADMIN" && (
+                  {canManage && (
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                        onClick={() => handleRemove(cu.id)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                      {cu.user.id !== session?.user?.id && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                          onClick={() => handleRemove(cu.id)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                     </TableCell>
                   )}
                 </TableRow>
