@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String
+  role         String        @default("VIEWER")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  companyUsers CompanyUser[]
+  transactions Transaction[] @relation("AddedBy")
+}
+
+model Company {
+  id           String        @id @default(cuid())
+  name         String
+  description  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  companyUsers CompanyUser[]
+  transactions Transaction[]
+}
+
+model CompanyUser {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String
+  role      String   @default("VIEWER")
+  joinedAt  DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([companyId])
+  @@index([userId])
+}
+
+model Transaction {
+  id             String   @id @default(cuid())
+  companyId      String
+  addedById      String
+  type           String
+  category       String?
+  loanDirection  String?
+  amount         Float
+  description    String?
+  date           DateTime
+  runningBalance Float
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  addedBy User    @relation("AddedBy", fields: [addedById], references: [id])
+
+  @@index([companyId])
+  @@index([addedById])
+  @@index([companyId, date])
+  @@index([type])
+}
