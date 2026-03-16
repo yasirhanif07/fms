@@ -78,6 +78,7 @@ export function parseCSV(csvText: string): {
   const errors: string[] = [];
   let skipped = 0;
   let fallbackYear = new Date().getFullYear();
+  let lastKnownDate: Date | null = null; // carry forward for dateless rows
 
   result.data.forEach((cols, rowIndex) => {
     const dateStr = (cols[0] || "").trim();
@@ -112,13 +113,20 @@ export function parseCSV(csvText: string): {
     const yearMatch = dateStr.match(/(\d{4})$/);
     if (yearMatch) fallbackYear = parseInt(yearMatch[1]);
 
-    const date = parseDate(dateStr, fallbackYear);
+    let date = parseDate(dateStr, fallbackYear);
+
+    // No date in this row — use the last known date (e.g. continuation rows)
+    if (!date && lastKnownDate) {
+      date = lastKnownDate;
+    }
+
     if (!date) {
       errors.push(`Row ${rowIndex + 1}: Could not parse date "${dateStr}"`);
       skipped++;
       return;
     }
 
+    lastKnownDate = date;
     const desc = description || "No description";
 
     if (income > 0) {
