@@ -15,8 +15,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Email already in use" }, { status: 400 });
     }
 
-    const userCount = await prisma.user.count();
-    const role = userCount === 0 ? "ADMIN" : "VIEWER";
+    const role = "ADMIN";
 
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await prisma.user.create({
