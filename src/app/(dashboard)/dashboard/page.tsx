@@ -13,10 +13,22 @@ import {
   Wallet,
   ArrowUpRight,
   ArrowDownRight,
+  Users,
 } from "lucide-react";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_COLORS } from "@/lib/constants";
+
+interface PartnerHolding {
+  id: string;
+  name: string;
+  total: number;
+  loan: number;
+  holdings: number;
+}
 
 interface DashboardData {
   currentBalance: number;
@@ -33,6 +45,7 @@ interface DashboardData {
     runningBalance: number;
     addedBy: { name: string };
   }[];
+  partnerHoldings: PartnerHolding[];
 }
 
 export default function DashboardPage() {
@@ -133,6 +146,52 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* Partner Holdings */}
+      {data.partnerHoldings.length > 0 && (() => {
+        const totals = data.partnerHoldings.reduce(
+          (acc, p) => ({ total: acc.total + p.total, loan: acc.loan + p.loan, holdings: acc.holdings + p.holdings }),
+          { total: 0, loan: 0, holdings: 0 }
+        );
+        return (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="w-4 h-4 text-slate-500" /> Partner Holdings
+              </CardTitle>
+              <Link href="/reports/partner" className="text-xs text-blue-600 hover:underline">Full report</Link>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-900 hover:bg-slate-900">
+                    <TableHead className="text-white font-bold">Person</TableHead>
+                    <TableHead className="text-right text-white font-bold">Total</TableHead>
+                    <TableHead className="text-right text-white font-bold">Loan</TableHead>
+                    <TableHead className="text-right text-white font-bold">Holdings</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.partnerHoldings.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell className="text-right text-sm">{formatPKR(p.total)}</TableCell>
+                      <TableCell className="text-right text-sm text-orange-600">{formatPKR(p.loan)}</TableCell>
+                      <TableCell className="text-right text-sm font-semibold text-green-700">{formatPKR(p.holdings)}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="bg-green-800 hover:bg-green-800">
+                    <TableCell className="text-white font-bold">Total</TableCell>
+                    <TableCell className="text-right text-white font-bold">{formatPKR(totals.total)}</TableCell>
+                    <TableCell className="text-right text-white font-bold">{formatPKR(totals.loan)}</TableCell>
+                    <TableCell className="text-right text-white font-bold">{formatPKR(totals.holdings)}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Chart + Recent Transactions */}
       <div className="grid lg:grid-cols-5 gap-6">

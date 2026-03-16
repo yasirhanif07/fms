@@ -93,6 +93,37 @@ export async function GET(req: Request) {
     take: 10,
   });
 
+  // Partner holdings breakdown
+  const companyUsers = await prisma.companyUser.findMany({
+    where: { companyId },
+    include: {
+      user: {
+        include: {
+          transactions: {
+            where: { companyId, type: { in: ["INCOME", "LOAN_GIVEN"] } },
+            select: { type: true, amount: true },
+          },
+        },
+      },
+    },
+  });
+
+  const partnerHoldings = companyUsers.map((cu) => {
+    const total = cu.user.transactions
+      .filter((t) => t.type === "INCOME")
+      .reduce((s, t) => s + t.amount, 0);
+    const loan = cu.user.transactions
+      .filter((t) => t.type === "LOAN_GIVEN")
+      .reduce((s, t) => s + t.amount, 0);
+    return {
+      id: cu.userId,
+      name: cu.user.name,
+      total,
+      loan,
+      holdings: total - loan,
+    };
+  });
+
   return NextResponse.json({
     currentBalance,
     monthlyIncome,
@@ -100,5 +131,6 @@ export async function GET(req: Request) {
     outstandingLoans,
     chartData,
     recentTransactions,
+    partnerHoldings,
   });
 }
