@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useCompany } from "@/context/CompanyContext";
-import { parseCSV, detectPartner, type ParsedTransaction } from "@/lib/csvImporter";
+import { parseCSV, detectPartner, type ParsedTransaction, type PartnerSummary } from "@/lib/csvImporter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +38,9 @@ export default function ImportPage() {
   const [step, setStep] = useState<Step>("upload");
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [partnerSummary, setPartnerSummary] = useState<PartnerSummary[]>([]);
+  // mapping: csv name → partner userId (for base values)
+  const [summaryMapping, setSummaryMapping] = useState<Record<string, string>>({});
   const [skipped, setSkipped] = useState(0);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
@@ -73,15 +76,13 @@ export default function ImportPage() {
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target?.result as string;
-        const { transactions: txs, skipped: sk, errors } = parseCSV(text);
+        const { transactions: txs, partnerSummary: ps, skipped: sk, errors } = parseCSV(text);
 
         // Auto-detect partner name from description
         const partnerNames = currentPartners.map((p) => p.user.name);
         const partnerByName = Object.fromEntries(
           currentPartners.map((p) => [p.user.name.toLowerCase(), p.user.id])
         );
-
-        // Also build first-name map for partial matches
         const partnerByFirstName = Object.fromEntries(
           currentPartners.map((p) => [p.user.name.split(" ")[0].toLowerCase(), p.user.id])
         );
@@ -89,18 +90,28 @@ export default function ImportPage() {
         const resolved = txs.map((tx) => {
           const detected = detectPartner(tx.description, partnerNames);
           let addedById: string | null = null;
-
           if (detected) {
             addedById =
               partnerByName[detected.toLowerCase()] ||
               partnerByFirstName[detected.split(" ")[0].toLowerCase()] ||
               null;
           }
-
           return { ...tx, detectedPartnerName: detected, addedById };
         });
 
+        // Auto-map partner summary names to partner IDs
+        const mapping: Record<string, string> = {};
+        ps.forEach((s) => {
+          const id =
+            partnerByName[s.name.toLowerCase()] ||
+            partnerByFirstName[s.name.split(" ")[0].toLowerCase()] ||
+            "";
+          mapping[s.name] = id;
+        });
+
         setTransactions(resolved);
+        setPartnerSummary(ps);
+        setSummaryMapping(mapping);
         setSkipped(sk);
         setParseErrors(errors);
         setStep("preview");
@@ -144,6 +155,7 @@ export default function ImportPage() {
     setImporting(true);
     setImportError("");
 
+    // 1. Import transactions
     const res = await fetch("/api/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -160,14 +172,34 @@ export default function ImportPage() {
       }),
     });
 
-    setImporting(false);
-
     if (!res.ok) {
+      setImporting(false);
       setImportError((await res.json()).error || "Import failed");
-    } else {
-      setImportedCount((await res.json()).imported);
-      setStep("done");
+      return;
     }
+
+    const { imported } = await res.json();
+
+    // 2. Save partner base values if summary was detected and mapped
+    const baseRows = partnerSummary
+      .filter((s) => summaryMapping[s.name])
+      .map((s) => ({
+        userId: summaryMapping[s.name],
+        baseHoldings: s.holdings,
+        baseLoan: s.loan,
+      }));
+
+    if (baseRows.length > 0) {
+      await fetch(`/api/companies/${selectedCompanyId}/partners/base`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: baseRows }),
+      });
+    }
+
+    setImporting(false);
+    setImportedCount(imported);
+    setStep("done");
   };
 
   // Count how many were auto-detected
@@ -270,10 +302,60 @@ export default function ImportPage() {
             Review and edit before importing. The <strong>Added By</strong> column is auto-detected from descriptions.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => { setStep("upload"); setTransactions([]); }}>
+        <Button variant="outline" size="sm" onClick={() => { setStep("upload"); setTransactions([]); setPartnerSummary([]); setSummaryMapping({}); }}>
           ← Different File
         </Button>
       </div>
+
+      {/* Partner Holdings Summary from CSV */}
+      {partnerSummary.length > 0 && (
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm text-blue-800">
+              Partner Holdings detected in CSV — will be set as base values
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-blue-700 border-b border-blue-200">
+                  <th className="text-left pb-1">Person (CSV)</th>
+                  <th className="text-right pb-1">Loan</th>
+                  <th className="text-right pb-1">Holdings</th>
+                  <th className="text-right pb-1">Total</th>
+                  <th className="text-right pb-1">Mapped to</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partnerSummary.map((s) => (
+                  <tr key={s.name} className="border-b border-blue-100 last:border-0">
+                    <td className="py-1 font-medium">{s.name}</td>
+                    <td className="text-right text-orange-600">{formatPKR(s.loan)}</td>
+                    <td className="text-right text-green-700">{formatPKR(s.holdings)}</td>
+                    <td className="text-right font-semibold">{formatPKR(s.total)}</td>
+                    <td className="text-right">
+                      <Select
+                        value={summaryMapping[s.name] || "NONE"}
+                        onValueChange={(v) => v && setSummaryMapping({ ...summaryMapping, [s.name]: v === "NONE" ? "" : v })}
+                      >
+                        <SelectTrigger className="h-6 text-xs w-36 ml-auto">
+                          <SelectValue placeholder="— skip —" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="NONE" className="text-xs text-muted-foreground">— skip —</SelectItem>
+                          {partners.map((p) => (
+                            <SelectItem key={p.user.id} value={p.user.id} className="text-xs">{p.user.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary bar */}
       <div className="flex flex-wrap gap-3">

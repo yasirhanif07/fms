@@ -1,5 +1,12 @@
 import Papa from "papaparse";
 
+export interface PartnerSummary {
+  name: string;
+  total: number;
+  loan: number;
+  holdings: number;
+}
+
 export interface ParsedTransaction {
   date: Date;
   dateStr: string;
@@ -78,6 +85,7 @@ export function detectPartner(description: string, partnerNames: string[]): stri
 
 export function parseCSV(csvText: string): {
   transactions: ParsedTransaction[];
+  partnerSummary: PartnerSummary[];
   skipped: number;
   errors: string[];
 } {
@@ -86,12 +94,26 @@ export function parseCSV(csvText: string): {
   });
 
   const transactions: ParsedTransaction[] = [];
+  const partnerSummary: PartnerSummary[] = [];
   const errors: string[] = [];
   let skipped = 0;
   let fallbackYear = new Date().getFullYear();
   let lastKnownDate: Date | null = null;
+  let inPartnerSection = false;
 
   result.data.forEach((cols, rowIndex) => {
+    // ── Detect partner summary section (columns K=10, L=11, M=12, N=13) ──
+    const col10 = (cols[10] || "").trim();
+    if (col10.toLowerCase() === "person") { inPartnerSection = true; return; }
+    if (inPartnerSection && col10) {
+      if (col10.toLowerCase() === "total") { inPartnerSection = false; return; }
+      const total = parseAmount(cols[11]);
+      const loan = parseAmount(cols[12]);
+      const holdings = parseAmount(cols[13]);
+      if (total > 0 || loan > 0 || holdings > 0) {
+        partnerSummary.push({ name: col10, total, loan, holdings });
+      }
+    }
     const dateStr = (cols[0] || "").trim();
     const incomeStr = (cols[1] || "").trim();
     const expenseStr = (cols[2] || "").trim();
@@ -163,5 +185,5 @@ export function parseCSV(csvText: string): {
   });
 
   transactions.sort((a, b) => a.date.getTime() - b.date.getTime());
-  return { transactions, skipped, errors };
+  return { transactions, partnerSummary, skipped, errors };
 }
