@@ -18,8 +18,8 @@ export async function GET(req: Request) {
       user: {
         include: {
           transactions: {
-            where: { companyId },
-            select: { type: true, amount: true, date: true, description: true, category: true },
+            where: { companyId, type: "INCOME" },
+            select: { type: true, amount: true },
           },
         },
       },
@@ -27,14 +27,11 @@ export async function GET(req: Request) {
   });
 
   const partnerReports = companyUsers.map((cu) => {
-    const txs = cu.user.transactions;
-    let txIncome = 0, txLoan = 0;
-    for (const tx of txs) {
-      if (tx.type === "INCOME") txIncome += tx.amount;
-      else if (tx.type === "LOAN_GIVEN") txLoan += tx.amount;
-    }
+    const txIncome = cu.user.transactions
+      .filter((t) => t.type === "INCOME")
+      .reduce((s, t) => s + t.amount, 0);
     const holdings = cu.baseHoldings + txIncome;
-    const loan = cu.baseLoan + txLoan;
+    const loan = cu.baseLoan; // loan from base (CSV summary) only
     return {
       partnerId: cu.userId,
       partnerName: cu.user.name,

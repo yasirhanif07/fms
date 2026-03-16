@@ -100,7 +100,7 @@ export async function GET(req: Request) {
       user: {
         include: {
           transactions: {
-            where: { companyId, type: { in: ["INCOME", "LOAN_GIVEN"] } },
+            where: { companyId, type: "INCOME" },
             select: { type: true, amount: true },
           },
         },
@@ -112,11 +112,8 @@ export async function GET(req: Request) {
     const txIncome = cu.user.transactions
       .filter((t) => t.type === "INCOME")
       .reduce((s, t) => s + t.amount, 0);
-    const txLoan = cu.user.transactions
-      .filter((t) => t.type === "LOAN_GIVEN")
-      .reduce((s, t) => s + t.amount, 0);
     const holdings = cu.baseHoldings + txIncome;
-    const loan = cu.baseLoan + txLoan;
+    const loan = cu.baseLoan; // loan comes only from base (CSV summary), not transactions
     return {
       id: cu.userId,
       name: cu.user.name,
