@@ -9,6 +9,7 @@ import {
   Building2,
   Landmark,
   FileBarChart2,
+  Upload,
 } from "lucide-react";
 
 const navItems = [
@@ -17,6 +18,7 @@ const navItems = [
   { href: "/companies", label: "Companies", icon: Building2 },
   { href: "/loans", label: "Loans", icon: Landmark },
   { href: "/reports", label: "Reports", icon: FileBarChart2 },
+  { href: "/import", label: "Import Data", icon: Upload },
 ];
 
 export function Sidebar() {
