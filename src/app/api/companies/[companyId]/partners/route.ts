@@ -3,6 +3,14 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+async function isCompanyAdmin(userId: string, companyId: string) {
+  const cu = await prisma.companyUser.findUnique({
+    where: { companyId_userId: { companyId, userId } },
+    select: { role: true },
+  });
+  return cu?.role === "ADMIN";
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: { companyId: string } }
@@ -25,7 +33,12 @@ export async function POST(
 ) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (session.user.role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const canManage =
+    session.user.role === "SUPER_ADMIN" ||
+    (await isCompanyAdmin(session.user.id, params.companyId));
+
+  if (!canManage) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { userId, role } = await req.json();
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
