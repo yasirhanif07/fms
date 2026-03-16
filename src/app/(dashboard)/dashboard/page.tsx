@@ -57,7 +57,7 @@ interface DashboardData {
 interface EditState {
   partnerId: string;
   total: string;
-  loan: string;
+  holdings: string;
   saving: boolean;
 }
 
@@ -87,7 +87,8 @@ export default function DashboardPage() {
     setEditState({ ...editState, saving: true });
 
     const newTotal = parseFloat(editState.total) || 0;
-    const newLoan = parseFloat(editState.loan) || 0;
+    const newHoldings = parseFloat(editState.holdings) || 0;
+    const newLoan = newTotal - newHoldings; // Loan = Total - Holdings
 
     const calls = [];
     if (newTotal !== original.total) {
@@ -226,9 +227,9 @@ export default function DashboardPage() {
                 <TableBody>
                   {data.partnerHoldings.map((p) => {
                     const isEditing = editState?.partnerId === p.id;
-                    const previewLoan = isEditing ? (parseFloat(editState.loan) || 0) : p.loan;
                     const previewTotal = isEditing ? (parseFloat(editState.total) || 0) : p.total;
-                    const previewHoldings = previewTotal - previewLoan;
+                    const previewHoldings = isEditing ? (parseFloat(editState.holdings) || 0) : p.holdings;
+                    const previewLoan = previewTotal - previewHoldings; // Loan = Total - Holdings
 
                     return (
                       <TableRow key={p.id}>
@@ -244,17 +245,17 @@ export default function DashboardPage() {
                           ) : formatPKR(p.total)}
                         </TableCell>
                         <TableCell className="text-right text-sm text-orange-600">
+                          {formatPKR(previewLoan)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-semibold text-green-700">
                           {isEditing ? (
                             <Input
                               type="number"
                               className="h-7 text-xs text-right w-36 ml-auto"
-                              value={editState.loan}
-                              onChange={(e) => setEditState({ ...editState, loan: e.target.value })}
+                              value={editState.holdings}
+                              onChange={(e) => setEditState({ ...editState, holdings: e.target.value })}
                             />
-                          ) : formatPKR(p.loan)}
-                        </TableCell>
-                        <TableCell className={`text-right text-sm font-semibold ${isEditing ? "text-slate-500" : "text-green-700"}`}>
-                          {formatPKR(previewHoldings)}
+                          ) : formatPKR(p.holdings)}
                         </TableCell>
                         {canEdit && (
                           <TableCell className="text-right">
@@ -282,7 +283,7 @@ export default function DashboardPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 w-7 p-0 text-slate-400 hover:text-slate-700"
-                                onClick={() => setEditState({ partnerId: p.id, total: String(p.total), loan: String(p.loan), saving: false })}
+                                onClick={() => setEditState({ partnerId: p.id, total: String(p.total), holdings: String(p.holdings), saving: false })}
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </Button>
