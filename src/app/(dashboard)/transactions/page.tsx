@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Fragment } from "react";
 import { useCompany } from "@/context/CompanyContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -281,8 +281,8 @@ export default function TransactionsPage() {
                   const isEditing = editingId === tx.id;
 
                   return (
-                    <>
-                      <TableRow key={tx.id} className={isEditing ? "bg-muted/30" : undefined}>
+                    <Fragment key={tx.id}>
+                      <TableRow className={isEditing ? "bg-muted/30" : undefined}>
                         <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                           {new Date(tx.date).toLocaleDateString("en-PK", {
                             day: "numeric",
@@ -354,7 +354,7 @@ export default function TransactionsPage() {
 
                       {/* Inline edit row */}
                       {isEditing && (
-                        <TableRow key={`${tx.id}-edit`} className="bg-muted/20">
+                        <TableRow className="bg-muted/20">
                           <TableCell colSpan={colSpan} className="py-3 px-4">
                             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                               {/* Date */}
@@ -530,7 +530,7 @@ export default function TransactionsPage() {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </TableBody>
