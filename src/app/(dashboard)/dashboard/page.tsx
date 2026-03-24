@@ -101,9 +101,8 @@ export default function DashboardPage() {
 
   const startEditing = (holdings: PartnerHolding[]) => {
     const rows: EditRows = {};
-    // Edit base values only (not tx-derived totals)
     holdings.forEach((p) => {
-      rows[p.id] = { loan: String(p.baseLoan), holdings: String(p.baseHoldings) };
+      rows[p.id] = { loan: String(p.loan), holdings: String(p.holdings) };
     });
     setEditRows(rows);
     setEditing(true);
@@ -114,10 +113,12 @@ export default function DashboardPage() {
     setSaving(true);
 
     const rows = data.partnerHoldings.map((p) => {
-      const row = editRows[p.id] ?? { loan: String(p.baseLoan), holdings: String(p.baseHoldings) };
+      const row = editRows[p.id] ?? { loan: String(p.loan), holdings: String(p.holdings) };
+      const txIncome = p.holdings - p.baseHoldings; // income derived from transactions
+      const inputHoldings = parseFloat(row.holdings) || 0;
       return {
         userId: p.id,
-        baseHoldings: parseFloat(row.holdings) || 0,
+        baseHoldings: inputHoldings - txIncome,
         baseLoan: parseFloat(row.loan) || 0,
       };
     });
@@ -256,9 +257,9 @@ export default function DashboardPage() {
         const previewRows = data.partnerHoldings.map((p) => {
           if (!editing) return { ...p };
           const row = editRows[p.id] ?? { loan: String(p.loan), holdings: String(p.holdings) };
-          const loan = parseFloat(row.loan) || 0;
           const holdings = parseFloat(row.holdings) || 0;
-          return { ...p, loan, holdings, total: loan + holdings };
+          const loan = parseFloat(row.loan) || 0;
+          return { ...p, loan, holdings, total: holdings + loan };
         });
 
         const totals = previewRows.reduce(
