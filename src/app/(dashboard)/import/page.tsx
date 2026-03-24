@@ -18,13 +18,26 @@ import {
 import { Upload, CheckCircle2, AlertCircle, X } from "lucide-react";
 import Link from "next/link";
 
-type Step = "upload" | "preview" | "done";
+type Step = "upload" | "preview" | "partner-setup" | "done";
 
 interface Partner {
   id: string;
   role: string;
   user: { id: string; name: string; email: string };
 }
+
+interface PartnerHolding {
+  id: string;
+  name: string;
+  role: string;
+  baseHoldings: number;
+  baseLoan: number;
+  holdings: number;
+  loan: number;
+  loans: { id: string; amount: number; description: string; date: string }[];
+}
+
+type SetupRows = Record<string, { holdings: string; loan: string }>;
 
 const TYPE_OPTIONS = Object.entries(TRANSACTION_TYPE_LABELS);
 const CATEGORY_OPTIONS = Object.entries(EXPENSE_CATEGORY_LABELS);
@@ -42,6 +55,10 @@ export default function ImportPage() {
   const [importedCount, setImportedCount] = useState(0);
   const [importError, setImportError] = useState("");
   const [selectedCompanyId, setSelectedCompanyId] = useState(activeCompanyId || "");
+  const [partnerHoldings, setPartnerHoldings] = useState<PartnerHolding[]>([]);
+  const [setupRows, setSetupRows] = useState<SetupRows>({});
+  const [setupSaving, setSetupSaving] = useState(false);
+  const [setupError, setSetupError] = useState("");
 
   const fetchPartners = async (companyId: string) => {
     const res = await fetch(`/api/companies/${companyId}/partners`);
@@ -132,6 +149,47 @@ export default function ImportPage() {
     const { imported } = await res.json();
     setImporting(false);
     setImportedCount(imported);
+
+    // Fetch partner data for setup step
+    const dashRes = await fetch(`/api/dashboard?companyId=${selectedCompanyId}`);
+    if (dashRes.ok) {
+      const dashData = await dashRes.json();
+      setPartnerHoldings(dashData.partnerHoldings);
+      const rows: SetupRows = {};
+      dashData.partnerHoldings.forEach((p: PartnerHolding) => {
+        rows[p.id] = { holdings: String(p.holdings), loan: String(p.loan) };
+      });
+      setSetupRows(rows);
+    }
+    setStep("partner-setup");
+  };
+
+  const handleSaveSetup = async () => {
+    setSetupSaving(true);
+    setSetupError("");
+
+    const rows = partnerHoldings.map((p) => {
+      const row = setupRows[p.id] ?? { holdings: String(p.holdings), loan: String(p.loan) };
+      const txIncome = p.holdings - p.baseHoldings;
+      const partnerLoansSum = p.loans.reduce((s, l) => s + l.amount, 0);
+      return {
+        userId: p.id,
+        baseHoldings: (parseFloat(row.holdings) || 0) - txIncome,
+        baseLoan: (parseFloat(row.loan) || 0) - partnerLoansSum,
+      };
+    });
+
+    const res = await fetch(`/api/companies/${selectedCompanyId}/partners/base`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows }),
+    });
+
+    setSetupSaving(false);
+    if (!res.ok) {
+      setSetupError((await res.json()).error || "Save failed");
+      return;
+    }
     setStep("done");
   };
 
@@ -141,6 +199,7 @@ export default function ImportPage() {
     setSkipped(0);
     setParseErrors([]);
     setImportError("");
+    setSetupError("");
   };
 
   // ── Upload ────────────────────────────────────────────────────────────────
@@ -194,6 +253,89 @@ export default function ImportPage() {
             </p>
           </CardContent>
         </Card>
+      </div>
+    );
+  }
+
+  // ── Partner Setup ─────────────────────────────────────────────────────────
+  if (step === "partner-setup") {
+    return (
+      <div className="max-w-2xl space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Set Partner Holdings</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Enter current holdings and loan for each partner. Skip to set later from the dashboard.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-1.5 bg-green-50 text-green-700 text-sm px-3 py-1.5 rounded-lg w-fit">
+          <CheckCircle2 className="w-4 h-4" />
+          <span><strong>{importedCount}</strong> transactions imported</span>
+        </div>
+
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Partner</TableHead>
+                  <TableHead className="w-44">Holdings (PKR)</TableHead>
+                  <TableHead className="w-44">Loan (PKR)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {partnerHoldings.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell>
+                      <div className="font-medium text-sm">{p.name}</div>
+                      <div className="text-xs text-muted-foreground">{p.role}</div>
+                    </TableCell>
+                    <TableCell>
+                      <input
+                        type="number"
+                        className="w-full border rounded px-2 py-1 text-sm"
+                        value={setupRows[p.id]?.holdings ?? "0"}
+                        onChange={(e) =>
+                          setSetupRows((prev) => ({
+                            ...prev,
+                            [p.id]: { ...prev[p.id], holdings: e.target.value },
+                          }))
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <input
+                        type="number"
+                        className="w-full border rounded px-2 py-1 text-sm"
+                        value={setupRows[p.id]?.loan ?? "0"}
+                        onChange={(e) =>
+                          setSetupRows((prev) => ({
+                            ...prev,
+                            [p.id]: { ...prev[p.id], loan: e.target.value },
+                          }))
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={handleSaveSetup} disabled={setupSaving}>
+            {setupSaving ? "Saving..." : "Save & Finish"}
+          </Button>
+          <Button variant="outline" onClick={() => setStep("done")}>
+            Skip
+          </Button>
+          {setupError && (
+            <p className="text-sm text-red-600 flex items-center gap-1.5">
+              <AlertCircle className="w-4 h-4" /> {setupError}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
