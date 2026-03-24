@@ -2,10 +2,9 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useCompany } from "@/context/CompanyContext";
-import { parseCSV, detectPartner, type ParsedTransaction, type PartnerSummary } from "@/lib/csvImporter";
+import { parseCSV, type ParsedTransaction } from "@/lib/csvImporter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -14,10 +13,9 @@ import {
 } from "@/components/ui/table";
 import { formatPKR } from "@/lib/currency";
 import {
-  TRANSACTION_TYPE_LABELS, TRANSACTION_TYPE_COLORS,
-  EXPENSE_CATEGORY_LABELS,
+  TRANSACTION_TYPE_LABELS, EXPENSE_CATEGORY_LABELS,
 } from "@/lib/constants";
-import { Upload, CheckCircle2, AlertCircle, X, User } from "lucide-react";
+import { Upload, CheckCircle2, AlertCircle, X } from "lucide-react";
 import Link from "next/link";
 
 type Step = "upload" | "preview" | "done";
@@ -38,9 +36,6 @@ export default function ImportPage() {
   const [step, setStep] = useState<Step>("upload");
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
-  const [partnerSummary, setPartnerSummary] = useState<PartnerSummary[]>([]);
-  // mapping: csv name → partner userId (for base values)
-  const [summaryMapping, setSummaryMapping] = useState<Record<string, string>>({});
   const [skipped, setSkipped] = useState(0);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
@@ -48,15 +43,12 @@ export default function ImportPage() {
   const [importError, setImportError] = useState("");
   const [selectedCompanyId, setSelectedCompanyId] = useState(activeCompanyId || "");
 
-  // Fetch partners whenever company changes
   const fetchPartners = async (companyId: string) => {
     const res = await fetch(`/api/companies/${companyId}/partners`);
     if (res.ok) {
       const data: Partner[] = await res.json();
       setPartners(data);
-      return data;
     }
-    return [];
   };
 
   const handleCompanyChange = async (companyId: string) => {
@@ -66,59 +58,19 @@ export default function ImportPage() {
   };
 
   const handleFile = useCallback(
-    async (file: File) => {
-      // Make sure partners are loaded
-      let currentPartners = partners;
-      if (!currentPartners.length && selectedCompanyId) {
-        currentPartners = await fetchPartners(selectedCompanyId);
-      }
-
+    (file: File) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target?.result as string;
-        const { transactions: txs, partnerSummary: ps, skipped: sk, errors } = parseCSV(text);
-
-        // Auto-detect partner name from description
-        const partnerNames = currentPartners.map((p) => p.user.name);
-        const partnerByName = Object.fromEntries(
-          currentPartners.map((p) => [p.user.name.toLowerCase(), p.user.id])
-        );
-        const partnerByFirstName = Object.fromEntries(
-          currentPartners.map((p) => [p.user.name.split(" ")[0].toLowerCase(), p.user.id])
-        );
-
-        const resolved = txs.map((tx) => {
-          const detected = detectPartner(tx.description, partnerNames);
-          let addedById: string | null = null;
-          if (detected) {
-            addedById =
-              partnerByName[detected.toLowerCase()] ||
-              partnerByFirstName[detected.split(" ")[0].toLowerCase()] ||
-              null;
-          }
-          return { ...tx, detectedPartnerName: detected, addedById };
-        });
-
-        // Auto-map partner summary names to partner IDs
-        const mapping: Record<string, string> = {};
-        ps.forEach((s) => {
-          const id =
-            partnerByName[s.name.toLowerCase()] ||
-            partnerByFirstName[s.name.split(" ")[0].toLowerCase()] ||
-            "";
-          mapping[s.name] = id;
-        });
-
-        setTransactions(resolved);
-        setPartnerSummary(ps);
-        setSummaryMapping(mapping);
+        const { transactions: txs, skipped: sk, errors } = parseCSV(text);
+        setTransactions(txs);
         setSkipped(sk);
         setParseErrors(errors);
         setStep("preview");
       };
       reader.readAsText(file);
     },
-    [partners, selectedCompanyId]
+    []
   );
 
   const handleDrop = useCallback(
@@ -155,16 +107,6 @@ export default function ImportPage() {
     setImporting(true);
     setImportError("");
 
-    // Build partnerBaseValues before sending (needed in the POST body)
-    const partnerBaseValues = partnerSummary
-      .filter((s) => summaryMapping[s.name])
-      .map((s) => ({
-        userId: summaryMapping[s.name],
-        holdings: s.holdings,
-        loan: s.loan,
-      }));
-
-    // 1. Import transactions (+ partner base values in the same request)
     const res = await fetch("/api/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -178,7 +120,6 @@ export default function ImportPage() {
           description: tx.description,
           addedById: tx.addedById || "",
         })),
-        partnerBaseValues: partnerBaseValues.length > 0 ? partnerBaseValues : undefined,
       }),
     });
 
@@ -189,34 +130,34 @@ export default function ImportPage() {
     }
 
     const { imported } = await res.json();
-
     setImporting(false);
     setImportedCount(imported);
     setStep("done");
   };
 
-  // Count how many were auto-detected
-  const detectedCount = transactions.filter((tx) => tx.addedById).length;
-  const unassignedCount = transactions.filter((tx) => !tx.addedById).length;
+  const reset = () => {
+    setStep("upload");
+    setTransactions([]);
+    setSkipped(0);
+    setParseErrors([]);
+    setImportError("");
+  };
 
   // ── Upload ────────────────────────────────────────────────────────────────
   if (step === "upload") {
     return (
       <div className="max-w-2xl space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">Import Historical Data</h1>
+          <h1 className="text-2xl font-bold">Import Transactions</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Upload your CSV ledger file to bulk-import transactions
+            Upload a CSV file to bulk-import transactions
           </p>
         </div>
 
         <Card>
           <CardContent className="pt-6 space-y-3">
             <p className="text-sm font-medium">Import into company</p>
-            <Select
-              value={selectedCompanyId}
-              onValueChange={(v) => v && handleCompanyChange(v)}
-            >
+            <Select value={selectedCompanyId} onValueChange={(v) => v && handleCompanyChange(v)}>
               <SelectTrigger>
                 <SelectValue placeholder="Select company first" />
               </SelectTrigger>
@@ -226,11 +167,6 @@ export default function ImportPage() {
                 ))}
               </SelectContent>
             </Select>
-            {partners.length > 0 && (
-              <p className="text-xs text-green-600">
-                ✓ {partners.length} partners loaded — names will be auto-detected from descriptions
-              </p>
-            )}
           </CardContent>
         </Card>
 
@@ -254,8 +190,7 @@ export default function ImportPage() {
             <p>Column C: Expense amount</p>
             <p>Column D: Description</p>
             <p className="pt-2 text-slate-500">
-              Partner names are auto-matched from descriptions. Types and categories are auto-detected.
-              Everything is editable in the preview before import.
+              Income column → Income. Expense column → Expense. Type and category can be adjusted in the preview.
             </p>
           </CardContent>
         </Card>
@@ -277,9 +212,7 @@ export default function ImportPage() {
         <div className="flex gap-3 mt-4">
           <Link href="/transactions"><Button>View Transactions</Button></Link>
           <Link href="/dashboard"><Button variant="outline">Dashboard</Button></Link>
-          <Button variant="outline" onClick={() => { setStep("upload"); setTransactions([]); }}>
-            Import Another
-          </Button>
+          <Button variant="outline" onClick={reset}>Import Another</Button>
         </div>
       </div>
     );
@@ -292,63 +225,11 @@ export default function ImportPage() {
         <div>
           <h1 className="text-2xl font-bold">Preview Import</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Review and edit before importing. The <strong>Added By</strong> column is auto-detected from descriptions.
+            Review and edit before importing.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => { setStep("upload"); setTransactions([]); setPartnerSummary([]); setSummaryMapping({}); }}>
-          ← Different File
-        </Button>
+        <Button variant="outline" size="sm" onClick={reset}>← Different File</Button>
       </div>
-
-      {/* Partner Holdings Summary from CSV */}
-      {partnerSummary.length > 0 && (
-        <Card className="border-blue-200 bg-blue-50/50">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm text-blue-800">
-              Partner Holdings detected in CSV — will be set as base values
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-blue-700 border-b border-blue-200">
-                  <th className="text-left pb-1">Person (CSV)</th>
-                  <th className="text-right pb-1">Loan</th>
-                  <th className="text-right pb-1">Holdings</th>
-                  <th className="text-right pb-1">Total</th>
-                  <th className="text-right pb-1">Mapped to</th>
-                </tr>
-              </thead>
-              <tbody>
-                {partnerSummary.map((s) => (
-                  <tr key={s.name} className="border-b border-blue-100 last:border-0">
-                    <td className="py-1 font-medium">{s.name}</td>
-                    <td className="text-right text-orange-600">{formatPKR(s.loan)}</td>
-                    <td className="text-right text-green-700">{formatPKR(s.holdings)}</td>
-                    <td className="text-right font-semibold">{formatPKR(s.total)}</td>
-                    <td className="text-right">
-                      <Select
-                        value={summaryMapping[s.name] || "NONE"}
-                        onValueChange={(v) => v && setSummaryMapping({ ...summaryMapping, [s.name]: v === "NONE" ? "" : v })}
-                      >
-                        <SelectTrigger className="h-6 text-xs w-36 ml-auto">
-                          <SelectValue placeholder="— skip —" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="NONE" className="text-xs text-muted-foreground">— skip —</SelectItem>
-                          {partners.map((p) => (
-                            <SelectItem key={p.user.id} value={p.user.id} className="text-xs">{p.user.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Summary bar */}
       <div className="flex flex-wrap gap-3">
@@ -356,19 +237,15 @@ export default function ImportPage() {
           <CheckCircle2 className="w-4 h-4" />
           <span><strong>{transactions.length}</strong> transactions ready</span>
         </div>
-        <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 text-sm px-3 py-1.5 rounded-lg">
-          <User className="w-4 h-4" />
-          <span><strong>{detectedCount}</strong> partners auto-detected</span>
-        </div>
-        {unassignedCount > 0 && (
-          <div className="flex items-center gap-1.5 bg-orange-50 text-orange-700 text-sm px-3 py-1.5 rounded-lg">
-            <AlertCircle className="w-4 h-4" />
-            <span><strong>{unassignedCount}</strong> unassigned — will use your account</span>
-          </div>
-        )}
         {skipped > 0 && (
           <div className="flex items-center gap-1.5 bg-slate-100 text-slate-600 text-sm px-3 py-1.5 rounded-lg">
             <span><strong>{skipped}</strong> rows skipped</span>
+          </div>
+        )}
+        {parseErrors.length > 0 && (
+          <div className="flex items-center gap-1.5 bg-red-50 text-red-600 text-sm px-3 py-1.5 rounded-lg">
+            <AlertCircle className="w-4 h-4" />
+            <span><strong>{parseErrors.length}</strong> parse errors</span>
           </div>
         )}
       </div>
@@ -391,7 +268,7 @@ export default function ImportPage() {
               </TableHeader>
               <TableBody>
                 {transactions.map((tx, i) => (
-                  <TableRow key={i} className={!tx.addedById ? "bg-orange-50/40" : ""}>
+                  <TableRow key={i}>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                       {tx.dateStr}
                     </TableCell>
@@ -434,7 +311,7 @@ export default function ImportPage() {
                         value={tx.addedById || "UNASSIGNED"}
                         onValueChange={(v) => updateTx(i, "addedById", v === "UNASSIGNED" ? null : v)}
                       >
-                        <SelectTrigger className={`h-7 text-xs ${!tx.addedById ? "border-orange-300 text-orange-600" : ""}`}>
+                        <SelectTrigger className="h-7 text-xs">
                           <SelectValue placeholder="— unassigned —" />
                         </SelectTrigger>
                         <SelectContent>
