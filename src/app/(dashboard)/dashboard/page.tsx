@@ -115,11 +115,13 @@ export default function DashboardPage() {
     const rows = data.partnerHoldings.map((p) => {
       const row = editRows[p.id] ?? { loan: String(p.loan), holdings: String(p.holdings) };
       const txIncome = p.holdings - p.baseHoldings; // income derived from transactions
+      const partnerLoansSum = p.loans.reduce((s, l) => s + l.amount, 0);
       const inputHoldings = parseFloat(row.holdings) || 0;
+      const inputLoan = parseFloat(row.loan) || 0;
       return {
         userId: p.id,
         baseHoldings: inputHoldings - txIncome,
-        baseLoan: parseFloat(row.loan) || 0,
+        baseLoan: inputLoan - partnerLoansSum,
       };
     });
 

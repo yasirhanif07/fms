@@ -117,7 +117,8 @@ export async function GET(req: Request) {
       .filter((t) => t.type === "INCOME")
       .reduce((s, t) => s + t.amount, 0);
     const holdings = cu.baseHoldings + txIncome;
-    const loan = cu.user.partnerLoans.reduce((s, l) => s + l.amount, 0);
+    const partnerLoansSum = cu.user.partnerLoans.reduce((s, l) => s + l.amount, 0);
+    const loan = cu.baseLoan + partnerLoansSum;
     return {
       id: cu.userId,
       name: cu.user.name,
