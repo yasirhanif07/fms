@@ -27,17 +27,21 @@ function parseDate(dateStr: string, fallbackYear: number): Date | null {
   const withYear = clean.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})$/);
   if (withYear) {
     const d = new Date(`${withYear[2]} ${withYear[1]}, ${withYear[3]}`);
-    return isNaN(d.getTime()) ? null : d;
+    if (isNaN(d.getTime())) return null;
+    d.setHours(12, 0, 0, 0);
+    return d;
   }
 
   const noYear = clean.match(/^(\d{1,2})-([A-Za-z]+)$/);
   if (noYear) {
     const d = new Date(`${noYear[2]} ${noYear[1]}, ${fallbackYear}`);
-    return isNaN(d.getTime()) ? null : d;
+    if (isNaN(d.getTime())) return null;
+    d.setHours(12, 0, 0, 0);
+    return d;
   }
 
   const iso = new Date(clean);
-  if (!isNaN(iso.getTime())) return iso;
+  if (!isNaN(iso.getTime())) { iso.setHours(12, 0, 0, 0); return iso; }
 
   return null;
 }
