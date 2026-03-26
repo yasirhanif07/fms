@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getBalanceDelta } from "@/lib/constants";
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -63,28 +62,6 @@ export async function GET(req: Request) {
     });
   }
 
-  // Outstanding loans
-  const loanTxs = await prisma.transaction.findMany({
-    where: {
-      companyId,
-      type: { in: ["LOAN_GIVEN", "LOAN_RECEIVED", "LOAN_REPAYMENT"] },
-    },
-    include: { addedBy: { select: { name: true } } },
-    orderBy: { date: "desc" },
-  });
-
-  // Compute net outstanding loan balance
-  let outstandingLoans = 0;
-  for (const tx of loanTxs) {
-    const delta = getBalanceDelta(tx.type, tx.loanDirection);
-    // Loans affect balance differently: LOAN_GIVEN = money out (we're owed), LOAN_RECEIVED = money in (we owe)
-    if (tx.type === "LOAN_GIVEN") outstandingLoans += tx.amount;
-    else if (tx.type === "LOAN_RECEIVED") outstandingLoans -= tx.amount;
-    else if (tx.type === "LOAN_REPAYMENT") {
-      outstandingLoans += delta * tx.amount;
-    }
-  }
-
   // Recent transactions
   const recentTransactions = await prisma.transaction.findMany({
     where: { companyId },
@@ -133,6 +110,9 @@ export async function GET(req: Request) {
       total: holdings + loan,
     };
   });
+
+  // Outstanding loans = sum of all partner loan values
+  const outstandingLoans = partnerHoldings.reduce((s, p) => s + p.loan, 0);
 
   return NextResponse.json({
     currentBalance,
