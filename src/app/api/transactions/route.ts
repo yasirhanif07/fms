@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   if (session.user.role === "VIEWER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
-  const { companyId, type, category, loanDirection, amount, description, date, addedById } = body;
+  const { companyId, type, category, loanDirection, amount, description, date, addedById, loanRecipientId } = body;
 
   if (!companyId || !type || !amount || !date) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -75,10 +75,20 @@ export async function POST(req: Request) {
   const delta = getBalanceDelta(type, loanDirection);
   const runningBalance = prevBalance + delta * Math.abs(amount);
 
+  // Validate loanRecipientId for LOAN_GIVEN
+  let resolvedLoanRecipientId: string | null = null;
+  if (type === "LOAN_GIVEN" && loanRecipientId) {
+    const cu = await prisma.companyUser.findUnique({
+      where: { companyId_userId: { companyId, userId: loanRecipientId } },
+    });
+    if (cu) resolvedLoanRecipientId = loanRecipientId;
+  }
+
   const transaction = await prisma.transaction.create({
     data: {
       companyId,
       addedById: resolvedAddedById,
+      loanRecipientId: resolvedLoanRecipientId,
       type,
       category: category || null,
       loanDirection: loanDirection || null,

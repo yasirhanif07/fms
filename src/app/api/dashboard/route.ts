@@ -77,7 +77,7 @@ export async function GET(req: Request) {
       user: {
         include: {
           transactions: {
-            where: { companyId, type: { in: ["INCOME", "EXPENSE", "LOAN_REPAYMENT"] } },
+            where: { companyId, type: { in: ["INCOME", "EXPENSE", "LOAN_REPAYMENT", "LOAN_GIVEN"] } },
             select: { type: true, amount: true, loanDirection: true },
           },
           partnerLoans: {
@@ -89,10 +89,23 @@ export async function GET(req: Request) {
     },
   });
 
+  // LOAN_GIVEN transactions grouped by recipient (for increasing recipient's loan)
+  const loanGivenTxs = await prisma.transaction.findMany({
+    where: { companyId, type: "LOAN_GIVEN", loanRecipientId: { not: null } },
+    select: { loanRecipientId: true, amount: true },
+  });
+  const loanReceivedByUser: Record<string, number> = {};
+  for (const tx of loanGivenTxs) {
+    if (tx.loanRecipientId) {
+      loanReceivedByUser[tx.loanRecipientId] = (loanReceivedByUser[tx.loanRecipientId] ?? 0) + tx.amount;
+    }
+  }
+
   const partnerHoldings = companyUsers.map((cu) => {
     const txDelta = cu.user.transactions.reduce((s, t) => {
       if (t.type === "INCOME") return s + t.amount;
       if (t.type === "EXPENSE") return s - t.amount;
+      if (t.type === "LOAN_GIVEN") return s - t.amount; // giver's holdings decrease
       return s;
     }, 0);
     const holdings = cu.baseHoldings + txDelta;
@@ -100,7 +113,8 @@ export async function GET(req: Request) {
     const loanRepaid = cu.user.transactions
       .filter((t) => t.type === "LOAN_REPAYMENT" && t.loanDirection === "INFLOW")
       .reduce((s, t) => s + t.amount, 0);
-    const loan = cu.baseLoan + partnerLoansSum - loanRepaid;
+    const loanReceived = loanReceivedByUser[cu.userId] ?? 0; // loans given TO this partner
+    const loan = cu.baseLoan + partnerLoansSum + loanReceived - loanRepaid;
     return {
       id: cu.userId,
       name: cu.user.name,

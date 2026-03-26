@@ -39,6 +39,7 @@ export default function NewTransactionPage() {
     description: "",
     date: new Date().toISOString().split("T")[0],
     addedById: "",
+    loanRecipientId: "",
   });
   const [partners, setPartners] = useState<Partner[]>([]);
   const [error, setError] = useState("");
@@ -73,6 +74,7 @@ export default function NewTransactionPage() {
         category: form.type === "EXPENSE" ? form.category || null : null,
         loanDirection: form.type === "LOAN_REPAYMENT" ? form.loanDirection || null : null,
         addedById: form.addedById || null,
+        loanRecipientId: form.type === "LOAN_GIVEN" ? form.loanRecipientId || null : null,
       }),
     });
 
@@ -169,6 +171,32 @@ export default function NewTransactionPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {/* Loan Recipient — only for LOAN_GIVEN */}
+            {form.type === "LOAN_GIVEN" && partners.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Loan Recipient (Partner)</Label>
+                <Select
+                  value={form.loanRecipientId}
+                  onValueChange={(v) => v && setForm({ ...form, loanRecipientId: v === "NONE" ? "" : v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="— select who receives the loan —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">— external / no partner —</SelectItem>
+                    {partners
+                      .filter((p) => p.user.id !== form.addedById)
+                      .map((p) => (
+                        <SelectItem key={p.user.id} value={p.user.id}>{p.user.name}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Giver&apos;s holdings will decrease. Recipient&apos;s loan will increase.
+                </p>
               </div>
             )}
 
