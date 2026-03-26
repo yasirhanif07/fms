@@ -92,3 +92,45 @@ export async function POST(req: Request) {
 
   return NextResponse.json(transaction, { status: 201 });
 }
+
+// DELETE: bulk delete by IDs or all for a company
+export async function DELETE(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { ids, companyId }: { ids?: string[]; companyId?: string } = await req.json();
+
+  if (companyId) {
+    // Delete ALL transactions for a company
+    const cu = await prisma.companyUser.findUnique({
+      where: { companyId_userId: { companyId, userId: session.user.id } },
+      select: { role: true },
+    });
+    const canDelete = session.user.role === "SUPER_ADMIN" || cu?.role === "ADMIN";
+    if (!canDelete) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const { count } = await prisma.transaction.deleteMany({ where: { companyId } });
+    return NextResponse.json({ deleted: count });
+  }
+
+  if (ids?.length) {
+    // Verify user has access to these transactions
+    const txs = await prisma.transaction.findMany({
+      where: { id: { in: ids } },
+      select: { companyId: true },
+    });
+    const companyIds = Array.from(new Set(txs.map((t) => t.companyId)));
+    for (const cid of companyIds) {
+      const cu = await prisma.companyUser.findUnique({
+        where: { companyId_userId: { companyId: cid, userId: session.user.id } },
+        select: { role: true },
+      });
+      const canDelete = session.user.role === "SUPER_ADMIN" || cu?.role === "ADMIN";
+      if (!canDelete) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const { count } = await prisma.transaction.deleteMany({ where: { id: { in: Array.from(ids) } } });
+    return NextResponse.json({ deleted: count });
+  }
+
+  return NextResponse.json({ error: "ids or companyId required" }, { status: 400 });
+}

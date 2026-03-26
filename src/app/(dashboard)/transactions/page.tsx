@@ -29,7 +29,7 @@ import {
   getBalanceDelta,
 } from "@/lib/constants";
 import Link from "next/link";
-import { Trash2, Plus, ChevronLeft, ChevronRight, Pencil, X, Check } from "lucide-react";
+import { Trash2, Plus, ChevronLeft, ChevronRight, Pencil, X, Check, AlertTriangle } from "lucide-react";
 import { useSession } from "next-auth/react";
 
 interface Transaction {
@@ -92,6 +92,10 @@ export default function TransactionsPage() {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
   const isAdmin =
     session?.user.role === "ADMIN" || session?.user.role === "SUPER_ADMIN";
 
@@ -128,7 +132,42 @@ export default function TransactionsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this transaction?")) return;
     await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+    setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
     fetchTxs();
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Delete ${selectedIds.size} selected transactions?`)) return;
+    setDeleting(true);
+    await fetch("/api/transactions", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: Array.from(selectedIds) }),
+    });
+    setSelectedIds(new Set());
+    setDeleting(false);
+    fetchTxs();
+  };
+
+  const handleDeleteAll = async () => {
+    if (!confirm(`Delete ALL transactions for this company? This cannot be undone.`)) return;
+    setDeleting(true);
+    await fetch("/api/transactions", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ companyId: activeCompanyId }),
+    });
+    setSelectedIds(new Set());
+    setDeleting(false);
+    fetchTxs();
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
   };
 
   const startEdit = (tx: Transaction) => {
@@ -186,8 +225,17 @@ export default function TransactionsPage() {
       )
     : transactions;
 
+  const allSelected = filtered.length > 0 && filtered.every((tx) => selectedIds.has(tx.id));
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds((prev) => { const n = new Set(prev); filtered.forEach((tx) => n.delete(tx.id)); return n; });
+    } else {
+      setSelectedIds((prev) => { const n = new Set(prev); filtered.forEach((tx) => n.add(tx.id)); return n; });
+    }
+  };
+
   const totalPages = Math.ceil(total / 20);
-  const colSpan = isAdmin ? 9 : 7;
+  const colSpan = isAdmin ? 10 : 8;
 
   if (!activeCompanyId) {
     return (
@@ -201,12 +249,28 @@ export default function TransactionsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Transactions</h1>
-        <Link href="/transactions/new">
-          <Button>
-            <Plus className="w-4 h-4 mr-1" /> Add
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={handleDeleteAll} disabled={deleting} className="text-red-600 border-red-200 hover:bg-red-50">
+              <AlertTriangle className="w-3.5 h-3.5 mr-1" /> Delete All
+            </Button>
+          )}
+          <Link href="/transactions/new">
+            <Button><Plus className="w-4 h-4 mr-1" /> Add</Button>
+          </Link>
+        </div>
       </div>
+
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+          <span className="text-sm text-red-700 font-medium">{selectedIds.size} selected</span>
+          <Button size="sm" variant="destructive" onClick={handleBulkDelete} disabled={deleting}>
+            <Trash2 className="w-3.5 h-3.5 mr-1" /> {deleting ? "Deleting..." : "Delete Selected"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setSelectedIds(new Set())}>Clear</Button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -244,6 +308,11 @@ export default function TransactionsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {isAdmin && (
+                    <TableHead className="w-8">
+                      <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="cursor-pointer" />
+                    </TableHead>
+                  )}
                   <TableHead>Date</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Category</TableHead>
@@ -283,6 +352,11 @@ export default function TransactionsPage() {
                   return (
                     <Fragment key={tx.id}>
                       <TableRow className={isEditing ? "bg-muted/30" : undefined}>
+                        {isAdmin && (
+                          <TableCell>
+                            <input type="checkbox" checked={selectedIds.has(tx.id)} onChange={() => toggleSelect(tx.id)} className="cursor-pointer" />
+                          </TableCell>
+                        )}
                         <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                           {new Date(tx.date).toLocaleDateString("en-PK", {
                             day: "numeric",
