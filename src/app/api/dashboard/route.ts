@@ -117,6 +117,7 @@ export async function GET(req: Request) {
       if (t.type === "INCOME") return s + t.amount;
       if (t.type === "EXPENSE") return s - t.amount;
       if (t.type === "LOAN_GIVEN") return s - t.amount; // giver's holdings decrease
+      if (t.type === "LOAN_REPAYMENT" && t.loanDirection === "OUTFLOW") return s - t.amount; // repaying external loan
       return s;
     }, 0);
     const partnerLoansSum = cu.user.partnerLoans.reduce((s, l) => s + l.amount, 0);
