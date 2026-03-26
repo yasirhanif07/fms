@@ -34,6 +34,7 @@ interface PartnerHolding {
   baseLoan: number;
   holdings: number;
   loan: number;
+  loanTxDelta: number;
   loans: { id: string; amount: number; description: string; date: string }[];
 }
 
@@ -175,7 +176,7 @@ export default function ImportPage() {
       return {
         userId: p.id,
         baseHoldings: (parseFloat(row.holdings) || 0) - txDelta,
-        baseLoan: (parseFloat(row.loan) || 0) - partnerLoansSum,
+        baseLoan: (parseFloat(row.loan) || 0) - partnerLoansSum - p.loanTxDelta,
       };
     });
 

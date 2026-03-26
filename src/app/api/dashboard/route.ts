@@ -89,8 +89,19 @@ export async function GET(req: Request) {
     },
   });
 
-  // LOAN_REPAYMENT INFLOW: use loanRecipientId if set, else fall back to addedById
-  // These increase the repayer's holdings (money entered company attributed to them)
+  // LOAN_GIVEN → auto-increase recipient's loan
+  const loanGivenTxs = await prisma.transaction.findMany({
+    where: { companyId, type: "LOAN_GIVEN", loanRecipientId: { not: null } },
+    select: { loanRecipientId: true, amount: true },
+  });
+  const loanReceivedByUser: Record<string, number> = {};
+  for (const tx of loanGivenTxs) {
+    if (tx.loanRecipientId) {
+      loanReceivedByUser[tx.loanRecipientId] = (loanReceivedByUser[tx.loanRecipientId] ?? 0) + tx.amount;
+    }
+  }
+
+  // LOAN_REPAYMENT INFLOW → auto-decrease repayer's loan, increase their holdings
   const loanRepaymentTxs = await prisma.transaction.findMany({
     where: { companyId, type: "LOAN_REPAYMENT", loanDirection: "INFLOW" },
     select: { loanRecipientId: true, addedById: true, amount: true },
@@ -109,11 +120,12 @@ export async function GET(req: Request) {
       if (t.type === "LOAN_REPAYMENT" && t.loanDirection === "OUTFLOW") return s - t.amount; // company repays external
       return s;
     }, 0);
-    const loanRepaid = loanRepaidByUser[cu.userId] ?? 0; // repayments credited to this partner
-    const holdings = cu.baseHoldings + txDelta + loanRepaid;
+    const loanRepaid = loanRepaidByUser[cu.userId] ?? 0;
+    const loanReceived = loanReceivedByUser[cu.userId] ?? 0;
+    const loanTxDelta = loanReceived - loanRepaid;
+    const holdings = cu.baseHoldings + txDelta + loanRepaid; // repayer's equity increases
     const partnerLoansSum = cu.user.partnerLoans.reduce((s, l) => s + l.amount, 0);
-    // Loan is managed manually (baseLoan + manually added partnerLoans entries)
-    const loan = cu.baseLoan + partnerLoansSum;
+    const loan = cu.baseLoan + partnerLoansSum + loanTxDelta; // auto: +received -repaid
     return {
       id: cu.userId,
       name: cu.user.name,
@@ -122,6 +134,7 @@ export async function GET(req: Request) {
       baseLoan: cu.baseLoan,
       holdings,
       loan,
+      loanTxDelta,
       loans: cu.user.partnerLoans,
       total: holdings + loan,
     };
