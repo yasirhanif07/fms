@@ -101,16 +101,15 @@ export async function GET(req: Request) {
     }
   }
 
-  // LOAN_REPAYMENT INFLOW transactions grouped by loanRecipientId (who is repaying)
+  // LOAN_REPAYMENT INFLOW transactions: use loanRecipientId if set, else fall back to addedById
   const loanRepaymentTxs = await prisma.transaction.findMany({
-    where: { companyId, type: "LOAN_REPAYMENT", loanDirection: "INFLOW", loanRecipientId: { not: null } },
-    select: { loanRecipientId: true, amount: true },
+    where: { companyId, type: "LOAN_REPAYMENT", loanDirection: "INFLOW" },
+    select: { loanRecipientId: true, addedById: true, amount: true },
   });
   const loanRepaidByUser: Record<string, number> = {};
   for (const tx of loanRepaymentTxs) {
-    if (tx.loanRecipientId) {
-      loanRepaidByUser[tx.loanRecipientId] = (loanRepaidByUser[tx.loanRecipientId] ?? 0) + tx.amount;
-    }
+    const userId = tx.loanRecipientId ?? tx.addedById;
+    loanRepaidByUser[userId] = (loanRepaidByUser[userId] ?? 0) + tx.amount;
   }
 
   const partnerHoldings = companyUsers.map((cu) => {
@@ -120,11 +119,11 @@ export async function GET(req: Request) {
       if (t.type === "LOAN_GIVEN") return s - t.amount; // giver's holdings decrease
       return s;
     }, 0);
-    const holdings = cu.baseHoldings + txDelta;
     const partnerLoansSum = cu.user.partnerLoans.reduce((s, l) => s + l.amount, 0);
     const loanRepaid = loanRepaidByUser[cu.userId] ?? 0; // repayments where this partner is the payer
     const loanReceived = loanReceivedByUser[cu.userId] ?? 0; // loans given TO this partner
     const loanTxDelta = loanReceived - loanRepaid; // net loan change from transactions
+    const holdings = cu.baseHoldings + txDelta + loanRepaid; // repayment converts loan → holdings
     const loan = cu.baseLoan + partnerLoansSum + loanTxDelta;
     return {
       id: cu.userId,

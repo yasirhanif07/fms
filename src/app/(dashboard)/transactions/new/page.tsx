@@ -200,6 +200,22 @@ export default function NewTransactionPage() {
               </div>
             )}
 
+            {/* Loan direction — only for LOAN_REPAYMENT */}
+            {form.type === "LOAN_REPAYMENT" && (
+              <div className="space-y-1.5">
+                <Label>Repayment Direction *</Label>
+                <Select value={form.loanDirection} onValueChange={(v) => v && setForm({ ...form, loanDirection: v, loanRecipientId: "" })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select direction" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="INFLOW">Inflow — We received repayment</SelectItem>
+                    <SelectItem value="OUTFLOW">Outflow — We repaid a loan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {/* Who is repaying — only for LOAN_REPAYMENT INFLOW */}
             {form.type === "LOAN_REPAYMENT" && form.loanDirection === "INFLOW" && partners.length > 0 && (
               <div className="space-y-1.5">
@@ -219,24 +235,8 @@ export default function NewTransactionPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  This partner&apos;s outstanding loan will decrease.
+                  This partner&apos;s outstanding loan will decrease and holdings will increase.
                 </p>
-              </div>
-            )}
-
-            {/* Loan direction — only for LOAN_REPAYMENT */}
-            {form.type === "LOAN_REPAYMENT" && (
-              <div className="space-y-1.5">
-                <Label>Repayment Direction *</Label>
-                <Select value={form.loanDirection} onValueChange={(v) => v && setForm({ ...form, loanDirection: v })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select direction" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="INFLOW">Inflow — We received repayment</SelectItem>
-                    <SelectItem value="OUTFLOW">Outflow — We repaid a loan</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
             )}
 
