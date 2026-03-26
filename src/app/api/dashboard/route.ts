@@ -114,7 +114,8 @@ export async function GET(req: Request) {
       .filter((t) => t.type === "LOAN_REPAYMENT" && t.loanDirection === "INFLOW")
       .reduce((s, t) => s + t.amount, 0);
     const loanReceived = loanReceivedByUser[cu.userId] ?? 0; // loans given TO this partner
-    const loan = cu.baseLoan + partnerLoansSum + loanReceived - loanRepaid;
+    const loanTxDelta = loanReceived - loanRepaid; // net loan change from transactions
+    const loan = cu.baseLoan + partnerLoansSum + loanTxDelta;
     return {
       id: cu.userId,
       name: cu.user.name,
@@ -123,6 +124,7 @@ export async function GET(req: Request) {
       baseLoan: cu.baseLoan,
       holdings,
       loan,
+      loanTxDelta,
       loans: cu.user.partnerLoans,
       total: holdings + loan,
     };

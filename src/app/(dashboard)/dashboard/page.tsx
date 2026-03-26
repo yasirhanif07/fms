@@ -44,6 +44,7 @@ interface PartnerHolding {
   baseLoan: number;
   holdings: number;
   loan: number;
+  loanTxDelta: number;
   loans: PartnerLoanEntry[];
   total: number;
 }
@@ -114,14 +115,14 @@ export default function DashboardPage() {
 
     const rows = data.partnerHoldings.map((p) => {
       const row = editRows[p.id] ?? { loan: String(p.loan), holdings: String(p.holdings) };
-      const txIncome = p.holdings - p.baseHoldings; // income derived from transactions
+      const txDelta = p.holdings - p.baseHoldings; // holdings change from transactions
       const partnerLoansSum = p.loans.reduce((s, l) => s + l.amount, 0);
       const inputHoldings = parseFloat(row.holdings) || 0;
       const inputLoan = parseFloat(row.loan) || 0;
       return {
         userId: p.id,
-        baseHoldings: inputHoldings - txIncome,
-        baseLoan: inputLoan - partnerLoansSum,
+        baseHoldings: inputHoldings - txDelta,
+        baseLoan: inputLoan - partnerLoansSum - p.loanTxDelta,
       };
     });
 
