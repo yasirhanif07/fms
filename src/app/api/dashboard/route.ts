@@ -89,19 +89,8 @@ export async function GET(req: Request) {
     },
   });
 
-  // LOAN_GIVEN transactions grouped by recipient (for increasing recipient's loan)
-  const loanGivenTxs = await prisma.transaction.findMany({
-    where: { companyId, type: "LOAN_GIVEN", loanRecipientId: { not: null } },
-    select: { loanRecipientId: true, amount: true },
-  });
-  const loanReceivedByUser: Record<string, number> = {};
-  for (const tx of loanGivenTxs) {
-    if (tx.loanRecipientId) {
-      loanReceivedByUser[tx.loanRecipientId] = (loanReceivedByUser[tx.loanRecipientId] ?? 0) + tx.amount;
-    }
-  }
-
-  // LOAN_REPAYMENT INFLOW transactions: use loanRecipientId if set, else fall back to addedById
+  // LOAN_REPAYMENT INFLOW: use loanRecipientId if set, else fall back to addedById
+  // These increase the repayer's holdings (money entered company attributed to them)
   const loanRepaymentTxs = await prisma.transaction.findMany({
     where: { companyId, type: "LOAN_REPAYMENT", loanDirection: "INFLOW" },
     select: { loanRecipientId: true, addedById: true, amount: true },
@@ -117,15 +106,14 @@ export async function GET(req: Request) {
       if (t.type === "INCOME") return s + t.amount;
       if (t.type === "EXPENSE") return s - t.amount;
       if (t.type === "LOAN_GIVEN") return s - t.amount; // giver's holdings decrease
-      if (t.type === "LOAN_REPAYMENT" && t.loanDirection === "OUTFLOW") return s - t.amount; // repaying external loan
+      if (t.type === "LOAN_REPAYMENT" && t.loanDirection === "OUTFLOW") return s - t.amount; // company repays external
       return s;
     }, 0);
+    const loanRepaid = loanRepaidByUser[cu.userId] ?? 0; // repayments credited to this partner
+    const holdings = cu.baseHoldings + txDelta + loanRepaid;
     const partnerLoansSum = cu.user.partnerLoans.reduce((s, l) => s + l.amount, 0);
-    const loanRepaid = loanRepaidByUser[cu.userId] ?? 0; // repayments where this partner is the payer
-    const loanReceived = loanReceivedByUser[cu.userId] ?? 0; // loans given TO this partner
-    const loanTxDelta = loanReceived - loanRepaid; // net loan change from transactions
-    const holdings = cu.baseHoldings + txDelta + loanRepaid; // repayment converts loan → holdings
-    const loan = cu.baseLoan + partnerLoansSum + loanTxDelta;
+    // Loan is managed manually (baseLoan + manually added partnerLoans entries)
+    const loan = cu.baseLoan + partnerLoansSum;
     return {
       id: cu.userId,
       name: cu.user.name,
@@ -134,7 +122,6 @@ export async function GET(req: Request) {
       baseLoan: cu.baseLoan,
       holdings,
       loan,
-      loanTxDelta,
       loans: cu.user.partnerLoans,
       total: holdings + loan,
     };

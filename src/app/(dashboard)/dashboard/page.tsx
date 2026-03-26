@@ -44,7 +44,6 @@ interface PartnerHolding {
   baseLoan: number;
   holdings: number;
   loan: number;
-  loanTxDelta: number;
   loans: PartnerLoanEntry[];
   total: number;
 }
@@ -122,7 +121,7 @@ export default function DashboardPage() {
       return {
         userId: p.id,
         baseHoldings: inputHoldings - txDelta,
-        baseLoan: inputLoan - partnerLoansSum - p.loanTxDelta,
+        baseLoan: inputLoan - partnerLoansSum,
       };
     });
 
