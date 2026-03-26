@@ -75,9 +75,9 @@ export async function POST(req: Request) {
   const delta = getBalanceDelta(type, loanDirection);
   const runningBalance = prevBalance + delta * Math.abs(amount);
 
-  // Validate loanRecipientId for LOAN_GIVEN
+  // Validate loanRecipientId for LOAN_GIVEN and LOAN_REPAYMENT
   let resolvedLoanRecipientId: string | null = null;
-  if (type === "LOAN_GIVEN" && loanRecipientId) {
+  if (["LOAN_GIVEN", "LOAN_REPAYMENT"].includes(type) && loanRecipientId) {
     const cu = await prisma.companyUser.findUnique({
       where: { companyId_userId: { companyId, userId: loanRecipientId } },
     });

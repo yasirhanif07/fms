@@ -74,7 +74,7 @@ export default function NewTransactionPage() {
         category: form.type === "EXPENSE" ? form.category || null : null,
         loanDirection: form.type === "LOAN_REPAYMENT" ? form.loanDirection || null : null,
         addedById: form.addedById || null,
-        loanRecipientId: form.type === "LOAN_GIVEN" ? form.loanRecipientId || null : null,
+        loanRecipientId: ["LOAN_GIVEN", "LOAN_REPAYMENT"].includes(form.type) ? form.loanRecipientId || null : null,
       }),
     });
 
@@ -196,6 +196,30 @@ export default function NewTransactionPage() {
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   Giver&apos;s holdings will decrease. Recipient&apos;s loan will increase.
+                </p>
+              </div>
+            )}
+
+            {/* Who is repaying — only for LOAN_REPAYMENT INFLOW */}
+            {form.type === "LOAN_REPAYMENT" && form.loanDirection === "INFLOW" && partners.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Who is Repaying?</Label>
+                <Select
+                  value={form.loanRecipientId}
+                  onValueChange={(v) => v && setForm({ ...form, loanRecipientId: v === "NONE" ? "" : v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="— select partner repaying —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">— external / no partner —</SelectItem>
+                    {partners.map((p) => (
+                      <SelectItem key={p.user.id} value={p.user.id}>{p.user.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  This partner&apos;s outstanding loan will decrease.
                 </p>
               </div>
             )}
