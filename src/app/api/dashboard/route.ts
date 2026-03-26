@@ -100,7 +100,7 @@ export async function GET(req: Request) {
       user: {
         include: {
           transactions: {
-            where: { companyId, type: "INCOME" },
+            where: { companyId, type: { in: ["INCOME", "EXPENSE"] } },
             select: { type: true, amount: true },
           },
           partnerLoans: {
@@ -113,10 +113,12 @@ export async function GET(req: Request) {
   });
 
   const partnerHoldings = companyUsers.map((cu) => {
-    const txIncome = cu.user.transactions
-      .filter((t) => t.type === "INCOME")
-      .reduce((s, t) => s + t.amount, 0);
-    const holdings = cu.baseHoldings + txIncome;
+    const txDelta = cu.user.transactions.reduce((s, t) => {
+      if (t.type === "INCOME") return s + t.amount;
+      if (t.type === "EXPENSE") return s - t.amount;
+      return s;
+    }, 0);
+    const holdings = cu.baseHoldings + txDelta;
     const partnerLoansSum = cu.user.partnerLoans.reduce((s, l) => s + l.amount, 0);
     const loan = cu.baseLoan + partnerLoansSum;
     return {
